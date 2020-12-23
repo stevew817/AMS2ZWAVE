@@ -1,0 +1,5 @@
+(fp_lib_table
+  (lib (name max17531aub)(type KiCad)(uri ${KIPRJMOD}/lib/MAX17531/footprints.pretty)(options "")(descr ""))
+  (lib (name ZGM130S)(type KiCad)(uri ${KIPRJMOD}/lib/ZGM130S/footprints.pretty)(options "")(descr ""))
+  (lib (name onsemi5150)(type KiCad)(uri ${KIPRJMOD}/lib/ncn5150/footprints.pretty)(options "")(descr ""))
+)

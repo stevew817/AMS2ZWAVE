@@ -1,0 +1,5 @@
+(sym_lib_table
+  (lib (name ncn5150)(type Legacy)(uri ${KIPRJMOD}/lib/ncn5150/eec.lib)(options "")(descr ""))
+  (lib (name MAX17531)(type Legacy)(uri ${KIPRJMOD}/lib/MAX17531/2020-12-23_13-44-00.lib)(options "")(descr ""))
+  (lib (name zgm130s)(type Legacy)(uri ${KIPRJMOD}/lib/ZGM130S/2020-12-23_15-39-31.lib)(options "")(descr ""))
+)

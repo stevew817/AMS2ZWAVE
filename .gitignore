@@ -1,3 +1,5 @@
 GNU*
 .pdm/*
 .settings/*
+*-bak
+*-cache

@@ -1,0 +1,54 @@
+EESchema-LIBRARY Version 2.4
+#encoding utf-8
+#
+# On Semiconductor NCN5150DR2G
+#
+DEF NCN5150DR2G U 0 40 Y Y 1 L N
+F0 "U" 0 200 50 H V L CNN 
+F1 "NCN5150DR2G" 0 300 50 H V L CNN 
+F2 "On_Semiconductor-NCN5150DR2G-*" 0 400 50 H I L CNN 
+F3 "http://www.onsemi.com/pub_link/Collateral/NCN5150-D.PDF" 0 500 50 H I L CNN 
+F4 "Manufacturer URL" 0 600 50 H I L CNN "Component Link 1 Description"
+F5 "http://www.onsemi.com/" 0 700 50 H I L CNN "Component Link 1 URL"
+F6 "Package Specification" 0 800 50 H I L CNN "Component Link 3 Description"
+F7 "http://www.onsemi.com/pub_link/Collateral/751B-05.PDF" 0 900 50 H I L CNN "Component Link 3 URL"
+F8 "38400 baud" 0 1000 50 H I L CNN "Data Rate"
+F9 "M-BUS" 0 1100 50 H I L CNN "Data Transmission Standard"
+F10 "Rev. 2" 0 1200 50 H I L CNN "Datasheet Version"
+F11 "Surface Mount" 0 1300 50 H I L CNN "Mounting Technology"
+F12 "1" 0 1400 50 H I L CNN "Number of Drivers"
+F13 "1" 0 1500 50 H I L CNN "Number of Receivers"
+F14 "16-Pin Small Outline Integrated Circuit, Body 9.9 x 3.9 mm, Pitch 1.27 mm" 0 1600 50 H I L CNN "Package Description"
+F15 "Rev. K, 12/2006" 0 1700 50 H I L CNN "Package Version"
+F16 "Tape and Reel" 0 1800 50 H I L CNN "Packing"
+F17 "IC" 0 1900 50 H I L CNN "category"
+F18 "9029494" 0 2000 50 H I L CNN "ciiva ids"
+F19 "89ead225a0dacdc9" 0 2100 50 H I L CNN "library id"
+F20 "On Semiconductor" 0 2200 50 H I L CNN "manufacturer"
+F21 "SOIC-16-751B-05" 0 2300 50 H I L CNN "package"
+F22 "1415352324" 0 2400 50 H I L CNN "release date"
+F23 "Yes" 0 2500 50 H I L CNN "rohs"
+F24 "B5A4E177-77B6-44E0-B98F-B1C6CF842E5C" 0 2600 50 H I L CNN "vault revision"
+F25 "yes" 0 2700 50 H I L CNN "imported"
+DRAW
+X BUSL2 1 100 -400 100 R 40 40 1 1 I 
+X VB 2 100 -200 100 R 40 40 1 1 W 
+X STC 3 1100 -900 100 L 40 40 1 1 P 
+X RIDD 4 100 -700 100 R 40 40 1 1 I 
+X PFB 5 1100 -600 100 L 40 40 1 1 O 
+X SC 6 1100 -800 100 L 40 40 1 1 P 
+X TXI 7 1100 -300 100 L 40 40 1 1 O 
+X TX 8 1100 -400 100 L 40 40 1 1 O 
+X VIO 9 100 -1000 100 R 40 40 1 1 W 
+X VS 10 100 -800 100 R 40 40 1 1 O 
+X VDD 11 100 -1100 100 R 40 40 1 1 W 
+X RX 12 1100 -100 100 L 40 40 1 1 I 
+X RXI 13 1100 0 100 L 40 40 1 1 I 
+X RIS 14 100 -600 100 R 40 40 1 1 I 
+X GND 15 1100 -1100 100 L 40 40 1 1 W 
+X BUSL1 16 100 0 100 R 40 40 1 1 I 
+S 200 100 1000 -1200 1 1 0 f
+ENDDRAW
+ENDDEF
+#
+# End Library
