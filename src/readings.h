@@ -38,7 +38,6 @@ extern "C"
 
 extern uint32_t active_power_watt;
 
-extern char meter_type[16];
 extern char meter_id[20];
 extern char meter_model[20];
 extern uint32_t voltage_l1;

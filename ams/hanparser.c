@@ -149,7 +149,6 @@ static uint32_t parse_uint(uint8_t* ptr, size_t size, cosem_type_t type, int8_t 
       parsed_number = (ptr[0] << 8) | ptr[1];
     if(size == 4)
       parsed_number = (ptr[0] << 24) | (ptr[1] << 16) | (ptr[2] << 8) | ptr[3];
-    return 0;
   }
 
   if(type == TYPE_INT) {
@@ -190,7 +189,6 @@ static int32_t parse_int(uint8_t* ptr, size_t size, cosem_type_t type, int8_t ex
       parsed_number = (ptr[0] << 8) | ptr[1];
     if(size == 4)
       parsed_number = (ptr[0] << 24) | (ptr[1] << 16) | (ptr[2] << 8) | ptr[3];
-    return 0;
   }
 
   if(type == TYPE_INT) {
@@ -377,31 +375,31 @@ static bool parse_cosem(uint8_t* array, size_t array_bytes)
           break;
         case 0x10:
           PRINT_LEVEL;
-          DPRINTF("(%d) int16: %d\n", item_counter, (int16_t)(start[1] << 8 | start[2]));
+          DPRINTF("(%d) int16: %d\n", item_counter, parse_int(&start[1], 2, TYPE_INT, 0));
           item_counter++;
           EAT_BYTES(3);
           break;
         case 0x12:
           PRINT_LEVEL;
-          DPRINTF("(%d) uint16: %u\n", item_counter, (uint16_t)((start[1] << 8) | start[2]));
+          DPRINTF("(%d) uint16: %u\n", item_counter, parse_uint(&start[1], 2, TYPE_UINT, 0));
           item_counter++;
           EAT_BYTES(3);
           break;
         case 0x06:
           PRINT_LEVEL;
-          DPRINTF("(%d) uint32: %u\n", item_counter, (uint32_t)((start[1] << 24) | (start[2] << 16) | (start[3] << 8) | start[4]));
+          DPRINTF("(%d) uint32: %u\n", item_counter, parse_uint(&start[1], 4, TYPE_UINT, 0));
           item_counter++;
           EAT_BYTES(5);
           break;
         case 0x0F:
           PRINT_LEVEL;
-          DPRINTF("(%d) int8: %d\n", item_counter, (int8_t)(start[1]));
+          DPRINTF("(%d) int8: %d\n", item_counter, parse_int(start, 2, TYPE_INT, 0));
           item_counter++;
           EAT_BYTES(2);
           break;
         case 0x16:
           PRINT_LEVEL;
-          DPRINTF("(%d) enum: %u\n", item_counter, start[1]);
+          DPRINTF("(%d) enum: %u\n", item_counter, parse_uint(&start[1], 1, TYPE_UINT, 0));
           item_counter++;
           EAT_BYTES(2);
           break;
@@ -429,9 +427,11 @@ static bool parse_cosem(uint8_t* array, size_t array_bytes)
         if(ams_known_list_ids_mapping[mapping_it]->list_id_version == meter_type_id) {
           if(find_array_in_array(array, array_bytes, (const uint8_t*)ams_known_list_ids_mapping[mapping_it]->list_id, ams_known_list_ids_mapping[mapping_it]->list_id_size)) {
               found_list = true;
+              detected_mapping = ams_known_list_ids_mapping[mapping_it];
               break;
           }
         }
+        mapping_it++;
       }
 
       if(!found_list) {
@@ -446,9 +446,8 @@ static bool parse_cosem(uint8_t* array, size_t array_bytes)
         while(ams_known_list_ids_mapping[mapping_it] != NULL) {
             if(find_array_in_array(array, array_bytes, (const uint8_t*)ams_known_list_ids_mapping[mapping_it]->list_id, ams_known_list_ids_mapping[mapping_it]->list_id_size)) {
                 DPRINTF("Found updated meter type %s\n", ams_known_list_ids_mapping[mapping_it]->list_id);
-
-                // TODO: anything else to reset upon meter type detection?
                 meter_type_id = ams_known_list_ids_mapping[mapping_it]->list_id_version;
+                detected_mapping = ams_known_list_ids_mapping[mapping_it];
                 break;
             }
             mapping_it++;
@@ -531,12 +530,12 @@ static bool parse_cosem(uint8_t* array, size_t array_bytes)
             case REACTIVE_POWER_IMPORT:
               parsed_data.reactive_power_import = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent);
               parsed_data.has_line_data = true;
-              DPRINTF("Active power (export): %u watt\n", parsed_data.reactive_power_import);
+              DPRINTF("Reactive power (import): %u watt\n", parsed_data.reactive_power_import);
               break;
             case REACTIVE_POWER_EXPORT:
               parsed_data.reactive_power_export = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent);
               parsed_data.has_line_data = true;
-              DPRINTF("Active power (export): %u watt\n", parsed_data.reactive_power_export);
+              DPRINTF("Reactive power (export): %u watt\n", parsed_data.reactive_power_export);
               break;
             case METER_ID:
               DPRINT("Meter ID: ");
@@ -596,22 +595,22 @@ static bool parse_cosem(uint8_t* array, size_t array_bytes)
               parsed_data.is_3p = true;
               break;
             case ACTIVE_ENERGY_IMPORT:
-              parsed_data.active_energy_import = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent + 3);
+              parsed_data.active_energy_import = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent);
               DPRINTF("Total active energy import %d Wh\n", parsed_data.active_energy_import);
               parsed_data.has_energy_data = true;
               break;
             case ACTIVE_ENERGY_EXPORT:
-              parsed_data.active_energy_export = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent + 3);
+              parsed_data.active_energy_export = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent);
               DPRINTF("Total active energy export %d Wh\n", parsed_data.active_energy_export);
               parsed_data.has_energy_data = true;
               break;
             case REACTIVE_ENERGY_IMPORT:
-              parsed_data.reactive_energy_import = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent + 3);
+              parsed_data.reactive_energy_import = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent);
               DPRINTF("Total reactive energy import %d Wh\n", parsed_data.reactive_energy_import);
               parsed_data.has_energy_data = true;
               break;
             case REACTIVE_ENERGY_EXPORT:
-              parsed_data.reactive_energy_export = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent + 3);
+              parsed_data.reactive_energy_export = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent);
               DPRINTF("Total reactive energy export %d Wh\n", parsed_data.reactive_energy_export);
               parsed_data.has_energy_data = true;
               break;
@@ -748,7 +747,7 @@ void han_parser_input_byte(uint8_t byte)
 
       // check FCS
       if(!han_parser_check_crc16_x25(&input_buffer[1], hdlc_length - 2)) {
-          //return reset_parser("invalid FCS CRC");
+          return reset_parser("invalid FCS CRC");
       }
 
       // parse contents
