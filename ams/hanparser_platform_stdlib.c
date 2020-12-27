@@ -24,7 +24,7 @@
  * 3. This notice may not be removed or altered from any source distribution.
  *
  *******************************************************************************/
-#include "ams/hanparser_platform.h"
+#include "hanparser_platform.h"
 
 // In order to redirect a variadic printf-style debug print function, we need to
 // include support for variadic functions and an implementation of vsnprintf.

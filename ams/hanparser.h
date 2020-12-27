@@ -58,11 +58,11 @@ typedef struct {
     uint32_t reactive_energy_import;/** Accumulated reactive energy in import direction, VArh */
     uint32_t reactive_energy_export;/** Accumulated reactive energy in export direction, VArh */
 
-    bool is_3p;             // If true: values for three phases are present, else only l1
-    bool has_power_data;    // If true: value for active_power_import is valid
-    bool has_meter_data;    // If true: values for meter_* are valid
-    bool has_line_data;     // If true: values for (re)active_power_*, voltage_lx and current_lx are valid
-    bool has_energy_data;   // If true: values for (re)active_energy_* are valid
+    bool is_3p;             /** If true: values for three phases are present, else only l1 */
+    bool has_power_data;    /** If true: value for active_power_import is valid */
+    bool has_meter_data;    /** If true: values for meter_* are valid */
+    bool has_line_data;     /** If true: values for (re)active_power_*, voltage_lx and current_lx are valid */
+    bool has_energy_data;   /** If true: values for (re)active_energy_* are valid */
 } han_parser_data_t;
 
 /**

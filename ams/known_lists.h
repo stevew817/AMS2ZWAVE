@@ -52,16 +52,16 @@ typedef enum {
   REACTIVE_POWER_EXPORT,  /** Reactive power in export direction, unit Watt, unsigned integer */
   METER_ID,               /** Meter ID (GSIN), ASCII */
   METER_TYPE,             /** Meter type (model number), ASCII */
-  CURRENT_L1,             /** Current supplied on phase 1, unit Ampere, signed integer */
-  CURRENT_L2,             /** Current supplied on phase 2, unit Ampere, signed integer (three-phase meter only) */
-  CURRENT_L3,             /** Current supplied on phase 3, unit Ampere, signed integer (three-phase meter only) */
-  VOLTAGE_L1,             /** Voltage supplied on phase 1, unit Ampere, unsigned integer */
-  VOLTAGE_L2,             /** Voltage supplied on phase 2, unit Ampere, unsigned integer (three-phase meter only) */
-  VOLTAGE_L3,             /** Voltage supplied on phase 3, unit Ampere, unsigned integer (three-phase meter only) */
-  ACTIVE_ENERGY_IMPORT,   /** Accumulated energy in import direction over meter's lifetime (= 'meter reading'), unit kWh, unsigned integer */
-  ACTIVE_ENERGY_EXPORT,   /** Accumulated energy in export direction over meter's lifetime (= 'meter reading'), unit kWh, unsigned integer */
-  REACTIVE_ENERGY_IMPORT, /** Accumulated reactive energy in import direction over meter's lifetime, unit kWh, unsigned integer */
-  REACTIVE_ENERGY_EXPORT, /** Accumulated reactive energy in export direction over meter's lifetime, unit kWh, unsigned integer */
+  CURRENT_L1,             /** Current supplied on phase 1, unit milli-Ampere, signed integer */
+  CURRENT_L2,             /** Current supplied on phase 2, unit milli-Ampere, signed integer (three-phase meter only) */
+  CURRENT_L3,             /** Current supplied on phase 3, unit milli-Ampere, signed integer (three-phase meter only) */
+  VOLTAGE_L1,             /** Voltage supplied on phase 1, unit Volt, unsigned integer */
+  VOLTAGE_L2,             /** Voltage supplied on phase 2, unit Volt, unsigned integer (three-phase meter only) */
+  VOLTAGE_L3,             /** Voltage supplied on phase 3, unit Volt, unsigned integer (three-phase meter only) */
+  ACTIVE_ENERGY_IMPORT,   /** Accumulated energy in import direction over meter's lifetime (= 'meter reading'), unit Wh, unsigned integer */
+  ACTIVE_ENERGY_EXPORT,   /** Accumulated energy in export direction over meter's lifetime (= 'meter reading'), unit Wh, unsigned integer */
+  REACTIVE_ENERGY_IMPORT, /** Accumulated reactive energy in import direction over meter's lifetime, unit VArh, unsigned integer */
+  REACTIVE_ENERGY_EXPORT, /** Accumulated reactive energy in export direction over meter's lifetime, unit VArh, unsigned integer */
   DATE_TIME,              /** Timestamp for when the report was generated. COSEM date-time serialized format (12 bytes) */
 } ams_data_element_t;
 
