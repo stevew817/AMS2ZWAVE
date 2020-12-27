@@ -30,7 +30,7 @@
 #include "known_lists.h"
 
 #ifndef DISABLE_AIDON
-const known_list_t aidon_list1 = {
+const ams_known_list_t aidon_list1 = {
     // Aidon list1
     4,
     {
@@ -38,7 +38,7 @@ const known_list_t aidon_list1 = {
     }
 };
 
-const known_list_t aidon_list2_it = {
+const ams_known_list_t aidon_list2_it = {
     // Aidon list2 for 3phase IT
     /* 0202 0906 0101000281ff 0a0b 4149444f4e5f5630303031 -> list ID
      * 0202 0906 0000600100ff 0a10 3733XXXXXXXXXXXXXXXXXXXXXXX13130 -> meter ID (ASCII)
@@ -70,7 +70,7 @@ const known_list_t aidon_list2_it = {
     }
 };
 
-const known_list_t aidon_list2_tn = {
+const ams_known_list_t aidon_list2_tn = {
     // Aidon list2 for 3phase TN
     46,
     {
@@ -90,7 +90,7 @@ const known_list_t aidon_list2_tn = {
     }
 };
 
-const known_list_t aidon_list2_1p = {
+const ams_known_list_t aidon_list2_1p = {
     // Aidon list2 for 1phase
     30,
     {
@@ -106,7 +106,7 @@ const known_list_t aidon_list2_1p = {
     }
 };
 
-const known_list_t aidon_list3_it = {
+const ams_known_list_t aidon_list3_it = {
     // Aidon list3 for 3phase IT
     /* 0202 0906 0101000281ff 0a0b 4149444f4e5f5630303031 -> list ID
      * 0202 0906 0000600100ff 0a10 3733XXXXXXXXXXXXXXXXXXXXXXX13130 -> meter ID (ASCII)
@@ -140,12 +140,15 @@ const known_list_t aidon_list3_it = {
       {VOLTAGE_L2, 36, -1},
       {VOLTAGE_L3, 40, -1},
       {DATE_TIME, 44, 0},
-      {TOTAL_DELIVERED_ENERGY, 46, 1},
+      {ACTIVE_ENERGY_IMPORT, 46, 1},
+      {ACTIVE_ENERGY_EXPORT, 50, 1},
+      {REACTIVE_ENERGY_IMPORT, 54, 1},
+      {REACTIVE_ENERGY_EXPORT, 58, 1},
       {END_OF_LIST, 0, 0}
     }
 };
 
-const known_list_t aidon_list3_tn = {
+const ams_known_list_t aidon_list3_tn = {
     // Aidon list3 for 3phase TN
     64,
     {
@@ -162,12 +165,15 @@ const known_list_t aidon_list3_tn = {
       {VOLTAGE_L2, 40, -1},
       {VOLTAGE_L3, 44, -1},
       {DATE_TIME, 48, 0},
-      {TOTAL_DELIVERED_ENERGY, 50, 1},
+      {ACTIVE_ENERGY_IMPORT, 50, 1},
+      {ACTIVE_ENERGY_EXPORT, 54, 1},
+      {REACTIVE_ENERGY_IMPORT, 58, 1},
+      {REACTIVE_ENERGY_EXPORT, 62, 1},
       {END_OF_LIST, 0, 0}
     }
 };
 
-const known_list_t aidon_list3_1p = {
+const ams_known_list_t aidon_list3_1p = {
     //Aidon list3 for 1phase
     48,
     {
@@ -180,12 +186,15 @@ const known_list_t aidon_list3_1p = {
       {CURRENT_L1, 24, -1},
       {VOLTAGE_L1, 28, -1},
       {DATE_TIME, 32, 0},
-      {TOTAL_DELIVERED_ENERGY, 34, 1},
+      {ACTIVE_ENERGY_IMPORT, 34, 1},
+      {ACTIVE_ENERGY_EXPORT, 38, 1},
+      {REACTIVE_ENERGY_IMPORT, 42, 1},
+      {REACTIVE_ENERGY_EXPORT, 46, 1},
       {END_OF_LIST, 0}
     }
 };
 
-const known_list_ids_mapping_t aidon_v0001_mapping = {
+const ams_known_list_ids_mapping_t aidon_v0001_mapping = {
     AIDON_V0001,
     sizeof("AIDON_V0001") - 1,
     "AIDON_V0001",
@@ -203,7 +212,7 @@ const known_list_ids_mapping_t aidon_v0001_mapping = {
 #endif //DISABLE_AIDON
 
 #ifndef DISABLE_KAMSTRUP
-const known_list_t kamstrup_list2_3p = {
+const ams_known_list_t kamstrup_list2_3p = {
     // Kamstrup list2 for 3phase TN
     /* 0A0E 4B616D73747275705F5630303031 -> list ID
      * 0906 0101000005FF 0A10 35373036353637303030303030303030 -> meter GSIN
@@ -237,7 +246,7 @@ const known_list_t kamstrup_list2_3p = {
     }
 };
 
-const known_list_t kamstrup_list2_3p_it = {
+const ams_known_list_t kamstrup_list2_3p_it = {
     // Kamstrup list2 for 3phase IT
     /* 0A0E 4B616D73747275705F5630303031 -> list ID
      * 0906 0101000005FF 0A10 35373036353637303030303030303030 -> meter GSIN
@@ -269,7 +278,7 @@ const known_list_t kamstrup_list2_3p_it = {
     }
 };
 
-const known_list_t kamstrup_list2_1p = {
+const ams_known_list_t kamstrup_list2_1p = {
     // Kamstrup list2 for 1phase
     17,
     {
@@ -285,7 +294,7 @@ const known_list_t kamstrup_list2_1p = {
     }
 };
 
-const known_list_t kamstrup_list3_3p = {
+const ams_known_list_t kamstrup_list3_3p = {
     // Kamstrup list2 for 3phase TN
     /* 0A0E 4B616D73747275705F5630303031 -> list ID
      * 0906 0101000005FF 0A10 35373036353637303030303030303030 -> meter GSIN
@@ -321,12 +330,15 @@ const known_list_t kamstrup_list3_3p = {
       {VOLTAGE_L2, 23, 0},
       {VOLTAGE_L3, 25, 0},
       {DATE_TIME, 27, 0},
-      {TOTAL_DELIVERED_ENERGY, 29, 1},
+      {ACTIVE_ENERGY_IMPORT, 29, 1},
+      {ACTIVE_ENERGY_EXPORT, 31, 1},
+      {REACTIVE_ENERGY_IMPORT, 33, 1},
+      {REACTIVE_ENERGY_EXPORT, 35, 1},
       {END_OF_LIST, 0, 0}
     }
 };
 
-const known_list_t kamstrup_list3_3p_it = {
+const ams_known_list_t kamstrup_list3_3p_it = {
     // Kamstrup list3 for 3phase IT
     /* 0A0E 4B616D73747275705F5630303031 -> list ID
      * 0906 0101000005FF 0A10 35373036353637303030303030303030 -> meter GSIN
@@ -361,12 +373,15 @@ const known_list_t kamstrup_list3_3p_it = {
       {VOLTAGE_L2, 21, 0},
       {VOLTAGE_L3, 23, 0},
       {DATE_TIME, 25, 0},
-      {TOTAL_DELIVERED_ENERGY, 27, 1},
+      {ACTIVE_ENERGY_IMPORT, 27, 1},
+      {ACTIVE_ENERGY_EXPORT, 29, 1},
+      {REACTIVE_ENERGY_IMPORT, 31, 1},
+      {REACTIVE_ENERGY_EXPORT, 33, 1},
       {END_OF_LIST, 0, 0}
     }
 };
 
-const known_list_t kamstrup_list3_1p = {
+const ams_known_list_t kamstrup_list3_1p = {
     // Kamstrup list3 for 1phase
     27,
     {
@@ -379,12 +394,15 @@ const known_list_t kamstrup_list3_1p = {
       {CURRENT_L1, 15, -2},
       {VOLTAGE_L1, 17, 0},
       {DATE_TIME, 19, 0},
-      {TOTAL_DELIVERED_ENERGY, 21, 1},
+      {ACTIVE_ENERGY_IMPORT, 21, 1},
+      {ACTIVE_ENERGY_EXPORT, 23, 1},
+      {REACTIVE_ENERGY_IMPORT, 25, 1},
+      {REACTIVE_ENERGY_EXPORT, 27, 1},
       {END_OF_LIST, 0, 0}
     }
 };
 
-const known_list_ids_mapping_t kamstrup_v0001_mapping = {
+const ams_known_list_ids_mapping_t kamstrup_v0001_mapping = {
     Kamstrup_V0001,
     sizeof("Kamstrup_V0001") - 1,
     "Kamstrup_V0001",
@@ -401,7 +419,7 @@ const known_list_ids_mapping_t kamstrup_v0001_mapping = {
 #endif //DISABLE_KAMSTRUP
 
 #ifndef DISABLE_KAIFA
-const known_list_t kaifa_list1 = {
+const ams_known_list_t kaifa_list1 = {
     // Kaifa list1
     /* 0201
      *   06000002FA
@@ -413,7 +431,7 @@ const known_list_t kaifa_list1 = {
     }
 };
 
-const known_list_t kaifa_list2_3p = {
+const ams_known_list_t kaifa_list2_3p = {
     // Kaifa list2 for 3phase
     /* 020D
      *   0907 4B464D5F303031 -> list ID
@@ -448,7 +466,7 @@ const known_list_t kaifa_list2_3p = {
     }
 };
 
-const known_list_t kaifa_list2_1p = {
+const ams_known_list_t kaifa_list2_1p = {
     // Kaifa list2 for 1phase
     9,
     {
@@ -464,7 +482,7 @@ const known_list_t kaifa_list2_1p = {
     }
 };
 
-const known_list_t kaifa_list3_3p = {
+const ams_known_list_t kaifa_list3_3p = {
     // Kaifa list3 for 3phase
     18,
     {
@@ -481,12 +499,15 @@ const known_list_t kaifa_list3_3p = {
       {VOLTAGE_L2, 12, -1},
       {VOLTAGE_L3, 13, -1},
       {DATE_TIME, 14, 0},
-      {TOTAL_DELIVERED_ENERGY, 15, 0},
+      {ACTIVE_ENERGY_IMPORT, 15, 0},
+      {ACTIVE_ENERGY_EXPORT, 16, 0},
+      {REACTIVE_ENERGY_IMPORT, 17, 0},
+      {REACTIVE_ENERGY_EXPORT, 18, 0},
       {END_OF_LIST, 0, 0}
     }
 };
 
-const known_list_t kaifa_list3_1p = {
+const ams_known_list_t kaifa_list3_1p = {
     // Kaifa list3 for 1phase
     14,
     {
@@ -499,12 +520,15 @@ const known_list_t kaifa_list3_1p = {
       {CURRENT_L1, 8, -3},
       {VOLTAGE_L1, 9, -1},
       {DATE_TIME, 10, 0},
-      {TOTAL_DELIVERED_ENERGY, 11, 0},
+      {ACTIVE_ENERGY_IMPORT, 11, 0},
+      {ACTIVE_ENERGY_EXPORT, 12, 0},
+      {REACTIVE_ENERGY_IMPORT, 13, 0},
+      {REACTIVE_ENERGY_EXPORT, 14, 0},
       {END_OF_LIST, 0, 0}
     }
 };
 
-const known_list_ids_mapping_t kaifa_v0001_mapping = {
+const ams_known_list_ids_mapping_t kaifa_v0001_mapping = {
     KFM_001,
     sizeof("KFM_001") - 1,
     "KFM_001",
@@ -519,7 +543,7 @@ const known_list_ids_mapping_t kaifa_v0001_mapping = {
 };
 #endif //DISABLE_KAIFA
 
-const known_list_ids_mapping_t* known_list_ids_mapping[] = {
+const ams_known_list_ids_mapping_t* ams_known_list_ids_mapping[] = {
 #ifndef DISABLE_AIDON
     &aidon_v0001_mapping,
 #endif // DISABLE_AIDON
@@ -529,6 +553,6 @@ const known_list_ids_mapping_t* known_list_ids_mapping[] = {
 #ifndef DISABLE_KAIFA
     &kaifa_v0001_mapping,
 #endif // DISABLE_KAIFA
-    // add more mappings here when added to known_list_ids_t
+    // add more mappings here when added to ams_known_list_ids_t
     NULL
 };

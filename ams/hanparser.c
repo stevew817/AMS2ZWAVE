@@ -353,7 +353,7 @@ bool parse_cosem(uint8_t* array, size_t array_bytes)
 
   DPRINTF("Total items: %d\n", --item_counter);
 
-  const known_list_ids_mapping_t* detected_mapping = NULL;
+  const ams_known_list_ids_mapping_t* detected_mapping = NULL;
 
   if(meter_type_id != UNKNOWN && item_counter > 4) {
       // have a meter type from before, check it is consistent
@@ -364,16 +364,16 @@ bool parse_cosem(uint8_t* array, size_t array_bytes)
           return false;
       } else {
         size_t mapping_it = 0;
-        while(known_list_ids_mapping[mapping_it] != NULL) {
-          if(known_list_ids_mapping[mapping_it]->list_id_version == meter_type_id) {
-            detected_mapping = known_list_ids_mapping[mapping_it];
+        while(ams_known_list_ids_mapping[mapping_it] != NULL) {
+          if(ams_known_list_ids_mapping[mapping_it]->list_id_version == meter_type_id) {
+            detected_mapping = ams_known_list_ids_mapping[mapping_it];
             break;
           }
         }
 
         if(detected_mapping == NULL) {
           meter_type_id = UNKNOWN;
-          reset_parser("Inknown meter type, resetting meter type\n");
+          reset_parser("Unknown meter type, resetting meter type\n");
           return false;
         }
       }
@@ -381,14 +381,14 @@ bool parse_cosem(uint8_t* array, size_t array_bytes)
     // try to auto-detect meter type
     if(item_counter > 4) {
         size_t mapping_it = 0;
-        while(known_list_ids_mapping[mapping_it] != NULL) {
-            if(find_array_in_array(array, array_bytes, (const uint8_t*)known_list_ids_mapping[mapping_it]->list_id, known_list_ids_mapping[mapping_it]->list_id_size)) {
-                DPRINTF("Found meter type %s\n", known_list_ids_mapping[mapping_it]->list_id);
+        while(ams_known_list_ids_mapping[mapping_it] != NULL) {
+            if(find_array_in_array(array, array_bytes, (const uint8_t*)ams_known_list_ids_mapping[mapping_it]->list_id, ams_known_list_ids_mapping[mapping_it]->list_id_size)) {
+                DPRINTF("Found meter type %s\n", ams_known_list_ids_mapping[mapping_it]->list_id);
 
                 // TODO: anything else to reset upon meter type detection?
-                meter_type_id = known_list_ids_mapping[mapping_it]->list_id_version;
-                memcpy(meter_type, known_list_ids_mapping[mapping_it]->list_id, known_list_ids_mapping[mapping_it]->list_id_size);
-                meter_type[known_list_ids_mapping[mapping_it]->list_id_size] = 0;
+                meter_type_id = ams_known_list_ids_mapping[mapping_it]->list_id_version;
+                memcpy(meter_type, ams_known_list_ids_mapping[mapping_it]->list_id, ams_known_list_ids_mapping[mapping_it]->list_id_size);
+                meter_type[ams_known_list_ids_mapping[mapping_it]->list_id_size] = 0;
                 break;
             }
             mapping_it++;
@@ -433,7 +433,7 @@ bool parse_cosem(uint8_t* array, size_t array_bytes)
   } else if(item_counter > 4) {
       // find a defined list based in meter type
       size_t list_it = 0;
-      const known_list_t* detected_list = NULL;
+      const ams_known_list_t* detected_list = NULL;
       while(detected_mapping->known_message_formats[list_it] != NULL) {
           if(detected_mapping->known_message_formats[list_it]->total_num_cosem_elements == item_counter) {
               DPRINT("Found matching list\n");
@@ -535,7 +535,7 @@ bool parse_cosem(uint8_t* array, size_t array_bytes)
               list2_recv = true;
               break;
               break;
-            case TOTAL_DELIVERED_ENERGY:
+            case ACTIVE_ENERGY_IMPORT:
               have_accumulated_consumption = true;
               total_meter_reading = (temp_item_ptr[0] << 24) | (temp_item_ptr[1] << 16) | (temp_item_ptr[2] << 8) | (temp_item_ptr[3] << 0);
               if(detected_list->mappings[mapping_it].exponent == 1) {

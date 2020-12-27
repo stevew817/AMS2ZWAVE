@@ -35,7 +35,7 @@ extern "C"
 uint32_t active_power_watt = 0;
 
 char meter_type[16] = {0};
-known_list_ids_t meter_type_id = UNKNOWN;
+ams_known_list_ids_t meter_type_id = UNKNOWN;
 char meter_id[20] = {0};
 char meter_model[20] = {0};
 

@@ -58,18 +58,21 @@ typedef enum {
   VOLTAGE_L1,             /** Voltage supplied on phase 1, unit Ampere, unsigned integer */
   VOLTAGE_L2,             /** Voltage supplied on phase 2, unit Ampere, unsigned integer (three-phase meter only) */
   VOLTAGE_L3,             /** Voltage supplied on phase 3, unit Ampere, unsigned integer (three-phase meter only) */
-  TOTAL_DELIVERED_ENERGY, /** Accumulated energy in import direction over meter's lifetime (= 'meter reading'), unit kWh, unsigned integer */
+  ACTIVE_ENERGY_IMPORT,   /** Accumulated energy in import direction over meter's lifetime (= 'meter reading'), unit kWh, unsigned integer */
+  ACTIVE_ENERGY_EXPORT,   /** Accumulated energy in export direction over meter's lifetime (= 'meter reading'), unit kWh, unsigned integer */
+  REACTIVE_ENERGY_IMPORT, /** Accumulated reactive energy in import direction over meter's lifetime, unit kWh, unsigned integer */
+  REACTIVE_ENERGY_EXPORT, /** Accumulated reactive energy in export direction over meter's lifetime, unit kWh, unsigned integer */
   DATE_TIME,              /** Timestamp for when the report was generated. COSEM date-time serialized format (12 bytes) */
-} data_element_t;
+} ams_data_element_t;
 
 /**
  * Mapping object to locate a datapoint in a HAN message
  */
 typedef struct {
-  const data_element_t element;         /** Data field mapped */
+  const ams_data_element_t element;     /** Data field mapped */
   const uint8_t cosem_element_offset;   /** Offset ('n-th entry') in the flattened cosem list wherer the data field is */
   const int8_t exponent;                /** Exponent (datapoint in our scale = raw value * 10 ^ exponent) */
-} data_element_mapping_t;
+} ams_data_element_mapping_t;
 
 typedef enum {
 #ifndef DISABLE_AIDON
@@ -83,29 +86,29 @@ typedef enum {
 #endif // DISABLE_KAIFA
   // Insert more known IDs here, and add mapping to known_list_ids_mapping
   UNKNOWN /** End marker for mappings list */
-} known_list_ids_t;
+} ams_known_list_ids_t;
 
 /**
  * Description of a known message, corresponding to a known list ID.
  */
 typedef struct {
-  const size_t total_num_cosem_elements;    /** Amount of COSEM elements in this known message (flattened, so don't count list or array) */
-  const data_element_mapping_t mappings[];  /** List of known data elements that can be extracted from this COSEM, ending in \ref END_OF_LIST */
-} known_list_t;
+  const size_t total_num_cosem_elements;        /** Amount of COSEM elements in this known message (flattened, so don't count list or array) */
+  const ams_data_element_mapping_t mappings[];  /** List of known data elements that can be extracted from this COSEM, ending in \ref END_OF_LIST */
+} ams_known_list_t;
 
 /**
  * Description of a known list ID, mapping our enum to the actual ASCII list ID, as well as a list of known messages for that list ID.
  */
 typedef struct {
-  const known_list_ids_t list_id_version;
-  const size_t list_id_size;                    /** number of bytes in \ref list_id */
-  const char list_id[16];                       /** ASCII value of list ID in COSEM message that \ref list_id_version corresponds to */
-  const known_list_t* known_message_formats[];  /** List of message formats known for this list ID, ending with a NULL pointer */
-} known_list_ids_mapping_t;
+  const ams_known_list_ids_t list_id_version;
+  const size_t list_id_size;                        /** number of bytes in \ref list_id */
+  const char list_id[16];                           /** ASCII value of list ID in COSEM message that \ref list_id_version corresponds to */
+  const ams_known_list_t* known_message_formats[];  /** List of message formats known for this list ID, ending with a NULL pointer */
+} ams_known_list_ids_mapping_t;
 
 // The actual list mappings are inside known_lists.c
 /** list of known list IDs, ending in an entry with list ID 'UNKNOWN' */
-extern const known_list_ids_mapping_t* known_list_ids_mapping[];
+extern const ams_known_list_ids_mapping_t* ams_known_list_ids_mapping[];
 
 #ifdef __cplusplus
 }
