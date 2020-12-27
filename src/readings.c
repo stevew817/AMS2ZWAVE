@@ -1,6 +1,6 @@
 /***************************************************************************//**
  * @file readings.h
- * @brief This file contains the HAN meter readout values, updated by hanparser.c
+ * @brief This file contains the HAN meter readout values, updated by main.c
  * @author github.com/stevew817
  *
  *******************************************************************************
