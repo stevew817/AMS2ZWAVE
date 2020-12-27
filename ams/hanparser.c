@@ -1,3 +1,30 @@
+/***************************************************************************//**
+ * @file hanparser.c
+ * @brief This file contains the HAN parser
+ * @author github.com/stevew817
+ *
+ *******************************************************************************
+ *
+ * SPDX-License-Identifier: Zlib
+ *
+ * This software is provided 'as-is', without any express or implied
+ * warranty. In no event will the authors be held liable for any damages
+ * arising from the use of this software.
+ *
+ * Permission is granted to anyone to use this software for any purpose,
+ * including commercial applications, and to alter it and redistribute it
+ * freely, subject to the following restrictions:
+ *
+ * 1. The origin of this software must not be misrepresented; you must not
+ *    claim that you wrote the original software. If you use this software
+ *    in a product, an acknowledgment in the product documentation would be
+ *    appreciated but is not required.
+ * 2. Altered source versions must be plainly marked as such, and must not be
+ *    misrepresented as being the original software.
+ * 3. This notice may not be removed or altered from any source distribution.
+ *
+ *******************************************************************************/
+
 #include "hanparser.h"
 #include "readings.h"
 #include <stddef.h>
@@ -326,13 +353,29 @@ bool parse_cosem(uint8_t* array, size_t array_bytes)
 
   DPRINTF("Total items: %d\n", --item_counter);
 
+  const known_list_ids_mapping_t* detected_mapping = NULL;
+
   if(meter_type_id != UNKNOWN && item_counter > 4) {
-      // have a meter type from before, assume it is correct until proven otherwise
+      // have a meter type from before, check it is consistent
       if(!find_array_in_array(array, array_bytes, (const uint8_t*)meter_type, strlen(meter_type))) {
           memset(meter_type, 0, sizeof(meter_type));
           meter_type_id = UNKNOWN;
           reset_parser("Invalid list identifier, resetting meter type\n");
           return false;
+      } else {
+        size_t mapping_it = 0;
+        while(known_list_ids_mapping[mapping_it] != NULL) {
+          if(known_list_ids_mapping[mapping_it]->list_id_version == meter_type_id) {
+            detected_mapping = known_list_ids_mapping[mapping_it];
+            break;
+          }
+        }
+
+        if(detected_mapping == NULL) {
+          meter_type_id = UNKNOWN;
+          reset_parser("Inknown meter type, resetting meter type\n");
+          return false;
+        }
       }
   } else {
     // try to auto-detect meter type
@@ -391,11 +434,10 @@ bool parse_cosem(uint8_t* array, size_t array_bytes)
       // find a defined list based in meter type
       size_t list_it = 0;
       const known_list_t* detected_list = NULL;
-      while(list_db[list_it] != NULL) {
-          if(list_db[list_it]->list_id_version == meter_type_id &&
-             list_db[list_it]->total_num_cosem_elements == item_counter) {
+      while(detected_mapping->known_message_formats[list_it] != NULL) {
+          if(detected_mapping->known_message_formats[list_it]->total_num_cosem_elements == item_counter) {
               DPRINT("Found matching list\n");
-              detected_list = list_db[list_it];
+              detected_list = detected_mapping->known_message_formats[list_it];
               break;
           }
           list_it++;
