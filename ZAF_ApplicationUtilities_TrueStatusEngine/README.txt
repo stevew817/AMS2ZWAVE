@@ -1,0 +1,1 @@
+Do not delete this folder, otherwise Simplicity Studio will delete the declared linked files from its project.
