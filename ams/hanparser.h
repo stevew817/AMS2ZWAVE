@@ -29,13 +29,57 @@
 #define AMS_HANPARSER_H_
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
-void input_byte(uint8_t byte);
+typedef struct {
+    const char* meter_gsin;         /** Null-terminated meter GSIN, ASCII */
+    const char* meter_model;        /** Null-terminated meter model, ASCII */
+
+    uint32_t active_power_import;   /** Active power in import direction, Watt */
+    uint32_t active_power_export;   /** Active power in export direction, Watt */
+    uint32_t reactive_power_import; /** Reactive power in import direction, VAr */
+    uint32_t reactive_power_export; /** Reactive power in export direction, VAr */
+
+    uint32_t voltage_l1;            /** Line/phase voltage for L1, Volt */
+    uint32_t voltage_l2;            /** Line/phase voltage for L2, Volt (3-phase only) */
+    uint32_t voltage_l3;            /** Line/phase voltage for L3, Volt (3-phase only) */
+
+    int32_t current_l1;             /** Current flowing through L1, milli-Ampere */
+    int32_t current_l2;             /** Current flowing through L2, milli-Ampere */
+    int32_t current_l3;             /** Current flowing through L3, milli-Ampere */
+
+    uint32_t active_energy_import;  /** Accumulated active energy in import direction, Wh */
+    uint32_t active_energy_export;  /** Accumulated active energy in export direction, Wh */
+    uint32_t reactive_energy_import;/** Accumulated reactive energy in import direction, VArh */
+    uint32_t reactive_energy_export;/** Accumulated reactive energy in export direction, VArh */
+
+    bool is_3p;             // If true: values for three phases are present, else only l1
+    bool has_power_data;    // If true: value for active_power_import is valid
+    bool has_line_data;     // If true: values for meter_*, (re)active_power_*, voltage_lx and current_lx are valid
+    bool has_energy_data;   // If true: values for meter_*, (re)active_power_*, voltage_lx, current_lx and (re)active_energy_* are valid
+} han_parser_data_t;
+
+/**
+ * Callback function type.
+ * decoded_data points to data extracted from the successfully decoded message.
+ * When the callback function returns, the data structure is no longer considered valid.
+ */
+typedef void (*han_parser_message_decoded_cb_t)(han_parser_data_t* decoded_data);
+
+/**
+ * Parse data received on HAN interface, one byte at a time.
+ */
+void han_parser_input_byte(uint8_t byte);
+
+/**
+ * Set callback for successfully parsed packets.
+ */
+void han_parser_set_callback(han_parser_message_decoded_cb_t func);
 
 #ifdef __cplusplus
 }

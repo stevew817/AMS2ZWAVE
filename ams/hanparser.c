@@ -31,12 +31,11 @@
 #include <stdbool.h>
 #include <string.h>
 
-#include "em_gpcrc.h"
-
-#define DEBUGPRINT
-#include "DebugPrint.h"
-
+#include "ams/hanparser_platform.h"
 #include "ams/known_lists.h"
+
+#define DPRINT  han_parser_debug_print
+#define DPRINTF han_parser_debug_printf
 
 /**** Trying to include some documentation
  *
@@ -101,38 +100,6 @@ void reset_parser( char* msg )
   } else {
       DPRINT("Parser reset \n");
   }
-}
-
-
-// Check CRC-16/X-25 checksum of a byte array
-// start at the pointed-to byte, read 'bytes' to calculate checksum, check sum
-// at the 2 bytes right after 'bytes'.
-bool check_crc16(uint8_t* start, size_t bytes)
-{
-  const GPCRC_Init_TypeDef crc_init = {
-      0x1021UL,        /* CRC32 Polynomial value. */
-      0xFFFFUL,        /* Initialization value. */
-      false,           /* Byte order is normal. */
-      false,           /* Bit order is not reversed on output. */
-      true,            /* Enable byte mode. */
-      false,           /* Disable automatic initialization on data read. */
-      true,            /* Enable GPCRC. */
-  };
-
-  GPCRC_Init(GPCRC, &crc_init);
-  GPCRC_Start(GPCRC);
-
-  for(size_t i = 0; i < bytes; i++) {
-      GPCRC_InputU8(GPCRC, start[i]);
-  }
-
-  // CRC-16/X-25 reads inverted
-  uint32_t result = ~GPCRC_DataRead(GPCRC);
-  if(start[bytes] != (result & 0xFF) ||
-     start[bytes + 1] != ((result >> 8) & 0xFF)) {
-      return false;
-  }
-  return true;
 }
 
 bool find_array_in_array(const uint8_t* haystack, size_t haystack_size, const uint8_t* needle, size_t needle_size)
@@ -661,7 +628,7 @@ void input_byte(uint8_t byte)
   }
   // Check HCS as it comes in
   else if(input_buffer_pos == hcs_offset + 2 + 1) {
-      if(!check_crc16(&input_buffer[1], 2 + dst_addr_size + src_addr_size + 1))
+      if(!han_parser_check_crc16_x25(&input_buffer[1], 2 + dst_addr_size + src_addr_size + 1))
           return reset_parser("invalid HCS CRC");
       else
         DPRINT("HCS checks out\n");
@@ -674,7 +641,7 @@ void input_byte(uint8_t byte)
         return reset_parser("no flag after declared packet length");
 
       // check FCS
-      if(!check_crc16(&input_buffer[1], hdlc_length - 2)) {
+      if(!han_parser_check_crc16_x25(&input_buffer[1], hdlc_length - 2)) {
           //return reset_parser("invalid FCS CRC");
       }
 
