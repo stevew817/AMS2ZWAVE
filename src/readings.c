@@ -33,6 +33,7 @@ extern "C"
 #endif
 
 uint32_t active_power_watt = 0;
+uint32_t last_reported_power_watt = 0;
 
 char meter_type[16] = {0};
 char meter_id[20] = {0};

@@ -37,6 +37,7 @@ extern "C"
 #include <stdbool.h>
 
 extern uint32_t active_power_watt;
+extern uint32_t last_reported_power_watt;
 
 extern char meter_id[20];
 extern char meter_model[20];
