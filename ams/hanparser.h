@@ -60,8 +60,9 @@ typedef struct {
 
     bool is_3p;             // If true: values for three phases are present, else only l1
     bool has_power_data;    // If true: value for active_power_import is valid
-    bool has_line_data;     // If true: values for meter_*, (re)active_power_*, voltage_lx and current_lx are valid
-    bool has_energy_data;   // If true: values for meter_*, (re)active_power_*, voltage_lx, current_lx and (re)active_energy_* are valid
+    bool has_meter_data;    // If true: values for meter_* are valid
+    bool has_line_data;     // If true: values for (re)active_power_*, voltage_lx and current_lx are valid
+    bool has_energy_data;   // If true: values for (re)active_energy_* are valid
 } han_parser_data_t;
 
 /**
@@ -69,7 +70,7 @@ typedef struct {
  * decoded_data points to data extracted from the successfully decoded message.
  * When the callback function returns, the data structure is no longer considered valid.
  */
-typedef void (*han_parser_message_decoded_cb_t)(han_parser_data_t* decoded_data);
+typedef void (*han_parser_message_decoded_cb_t)(const han_parser_data_t* decoded_data);
 
 /**
  * Parse data received on HAN interface, one byte at a time.

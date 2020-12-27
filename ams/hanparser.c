@@ -26,7 +26,6 @@
  *******************************************************************************/
 
 #include "hanparser.h"
-#include "readings.h"
 #include <stddef.h>
 #include <stdbool.h>
 #include <string.h>
@@ -78,6 +77,18 @@ extern "C"
 
 #define HDLC_FLAG 0x7E
 
+#define PARSE_UINT32(cptr) ( (cptr[0] << 24) | \
+                             (cptr[1] << 16) | \
+                             (cptr[2] << 8)  | \
+                             (cptr[3] << 0) )
+
+typedef enum {
+  TYPE_BYTE_ARRAY,
+  TYPE_UINT,
+  TYPE_INT,
+  TYPE_DATETIME
+} cosem_type_t;
+
 static uint8_t input_buffer[1024];
 static size_t input_buffer_pos = 0;
 static size_t hdlc_length = sizeof(input_buffer);
@@ -85,13 +96,18 @@ static size_t dst_addr_size = 0;
 static size_t src_addr_size = 0;
 static size_t hcs_offset = 0;
 
-void reset_parser( char* msg )
+static han_parser_data_t parsed_data;
+static han_parser_message_decoded_cb_t cb = NULL;
+static ams_known_list_ids_t meter_type_id = UNKNOWN;
+
+static void reset_parser( char* msg )
 {
   input_buffer_pos = 0;
   hdlc_length = sizeof(input_buffer);
   dst_addr_size = 0;
   src_addr_size = 0;
   hcs_offset = 0;
+  memset(&parsed_data, 0, sizeof(parsed_data));
 
   if(msg != NULL) {
       DPRINT("Parser reset with msg: ");
@@ -102,7 +118,7 @@ void reset_parser( char* msg )
   }
 }
 
-bool find_array_in_array(const uint8_t* haystack, size_t haystack_size, const uint8_t* needle, size_t needle_size)
+static bool find_array_in_array(const uint8_t* haystack, size_t haystack_size, const uint8_t* needle, size_t needle_size)
 {
   size_t haypos, needlepos;
   if(needle_size > haystack_size)
@@ -123,7 +139,83 @@ bool find_array_in_array(const uint8_t* haystack, size_t haystack_size, const ui
 #define EAT_BYTES(x) do {if(x > bytes) {reset_parser("COSEM parser error\n"); return false;} bytes -= x; start += x;} while(0)
 #define PRINT_LEVEL do { for(size_t level_indent = 0; level_indent < current_level * 2; level_indent++) DPRINT(" "); } while(0)
 
-bool get_element_by_sequence_number(uint8_t* start, size_t bytes, size_t seqnum, uint8_t** item_ptr, size_t* item_size)
+static uint32_t parse_uint(uint8_t* ptr, size_t size, cosem_type_t type, int8_t exponent) {
+  uint32_t parsed_number = 0;
+
+  if(type == TYPE_UINT) {
+    if(size == 1)
+      parsed_number = ptr[0];
+    if(size == 2)
+      parsed_number = (ptr[0] << 8) | ptr[1];
+    if(size == 4)
+      parsed_number = (ptr[0] << 24) | (ptr[1] << 16) | (ptr[2] << 8) | ptr[3];
+    return 0;
+  }
+
+  if(type == TYPE_INT) {
+    if(ptr[0] & 0x80)
+      // report actual negative numbers as 0 when cast to unsigned
+      return 0;
+    if(size == 1)
+      parsed_number = ((int8_t)(ptr[0]));
+    if(size == 2)
+      parsed_number = ((int16_t)((ptr[0] << 8) | ptr[1]));
+    if(size == 4)
+      parsed_number = ((int32_t)((ptr[0] << 24) | (ptr[1] << 16) | (ptr[2] << 8) | ptr[3]));
+  }
+
+  while(exponent < 0) {
+    parsed_number /= 10;
+    exponent++;
+  }
+
+  while(exponent > 0) {
+    parsed_number *= 10;
+    exponent--;
+  }
+
+  return parsed_number;
+}
+
+static int32_t parse_int(uint8_t* ptr, size_t size, cosem_type_t type, int8_t exponent) {
+  int32_t parsed_number = 0;
+
+  if(type == TYPE_UINT) {
+    if(ptr[0] & 0x80)
+      // report out-of-range unsigned number as 0
+      return 0;
+    if(size == 1)
+      parsed_number = ptr[0];
+    if(size == 2)
+      parsed_number = (ptr[0] << 8) | ptr[1];
+    if(size == 4)
+      parsed_number = (ptr[0] << 24) | (ptr[1] << 16) | (ptr[2] << 8) | ptr[3];
+    return 0;
+  }
+
+  if(type == TYPE_INT) {
+    if(size == 1)
+      parsed_number = ((int8_t)(ptr[0]));
+    if(size == 2)
+      parsed_number = ((int16_t)((ptr[0] << 8) | ptr[1]));
+    if(size == 4)
+      parsed_number = ((int32_t)((ptr[0] << 24) | (ptr[1] << 16) | (ptr[2] << 8) | ptr[3]));
+  }
+
+  while(exponent < 0) {
+    parsed_number /= 10;
+    exponent++;
+  }
+
+  while(exponent > 0) {
+    parsed_number *= 10;
+    exponent--;
+  }
+
+  return parsed_number;
+}
+
+static bool get_element_by_sequence_number(uint8_t* start, size_t bytes, size_t seqnum, uint8_t** item_ptr, size_t* item_size, cosem_type_t* item_type)
 {
   size_t item_counter = 1;
   while(bytes > 0) {
@@ -138,6 +230,7 @@ bool get_element_by_sequence_number(uint8_t* start, size_t bytes, size_t seqnum,
         if(item_counter == seqnum) {
             *item_ptr = &start[2];
             *item_size = start[1];
+            *item_type = TYPE_BYTE_ARRAY;
             return true;
         }
         item_counter++;
@@ -147,6 +240,7 @@ bool get_element_by_sequence_number(uint8_t* start, size_t bytes, size_t seqnum,
         if(item_counter == seqnum) {
             *item_ptr = &start[2];
             *item_size = start[1];
+            *item_type = TYPE_BYTE_ARRAY;
             return true;
         }
         item_counter++;
@@ -156,6 +250,7 @@ bool get_element_by_sequence_number(uint8_t* start, size_t bytes, size_t seqnum,
         if(item_counter == seqnum) {
             *item_ptr = &start[1];
             *item_size = 2;
+            *item_type = TYPE_INT;
             return true;
         }
         item_counter++;
@@ -165,6 +260,7 @@ bool get_element_by_sequence_number(uint8_t* start, size_t bytes, size_t seqnum,
         if(item_counter == seqnum) {
             *item_ptr = &start[1];
             *item_size = 2;
+            *item_type = TYPE_UINT;
             return true;
         }
         item_counter++;
@@ -174,6 +270,7 @@ bool get_element_by_sequence_number(uint8_t* start, size_t bytes, size_t seqnum,
         if(item_counter == seqnum) {
             *item_ptr = &start[1];
             *item_size = 4;
+            *item_type = TYPE_UINT;
             return true;
         }
         item_counter++;
@@ -183,6 +280,7 @@ bool get_element_by_sequence_number(uint8_t* start, size_t bytes, size_t seqnum,
         if(item_counter == seqnum) {
             *item_ptr = &start[1];
             *item_size = 1;
+            *item_type = TYPE_INT;
             return true;
         }
         item_counter++;
@@ -192,6 +290,7 @@ bool get_element_by_sequence_number(uint8_t* start, size_t bytes, size_t seqnum,
         if(item_counter == seqnum) {
             *item_ptr = &start[1];
             *item_size = 1;
+            *item_type = TYPE_UINT;
             return true;
         }
         item_counter++;
@@ -205,7 +304,7 @@ bool get_element_by_sequence_number(uint8_t* start, size_t bytes, size_t seqnum,
   return false;
 }
 
-bool parse_cosem(uint8_t* array, size_t array_bytes)
+static bool parse_cosem(uint8_t* array, size_t array_bytes)
 {
   size_t items_in_level[10] = {0};
   size_t current_level = 0;
@@ -324,38 +423,32 @@ bool parse_cosem(uint8_t* array, size_t array_bytes)
 
   if(meter_type_id != UNKNOWN && item_counter > 4) {
       // have a meter type from before, check it is consistent
-      if(!find_array_in_array(array, array_bytes, (const uint8_t*)meter_type, strlen(meter_type))) {
-          memset(meter_type, 0, sizeof(meter_type));
-          meter_type_id = UNKNOWN;
-          reset_parser("Invalid list identifier, resetting meter type\n");
-          return false;
-      } else {
-        size_t mapping_it = 0;
-        while(ams_known_list_ids_mapping[mapping_it] != NULL) {
-          if(ams_known_list_ids_mapping[mapping_it]->list_id_version == meter_type_id) {
-            detected_mapping = ams_known_list_ids_mapping[mapping_it];
-            break;
+      size_t mapping_it = 0;
+      bool found_list = false;
+      while(ams_known_list_ids_mapping[mapping_it] != NULL) {
+        if(ams_known_list_ids_mapping[mapping_it]->list_id_version == meter_type_id) {
+          if(find_array_in_array(array, array_bytes, (const uint8_t*)ams_known_list_ids_mapping[mapping_it]->list_id, ams_known_list_ids_mapping[mapping_it]->list_id_size)) {
+              found_list = true;
+              break;
           }
         }
-
-        if(detected_mapping == NULL) {
-          meter_type_id = UNKNOWN;
-          reset_parser("Unknown meter type, resetting meter type\n");
-          return false;
-        }
       }
-  } else {
+
+      if(!found_list) {
+        meter_type_id = UNKNOWN;
+      }
+  }
+
+  if(meter_type_id == UNKNOWN) {
     // try to auto-detect meter type
     if(item_counter > 4) {
         size_t mapping_it = 0;
         while(ams_known_list_ids_mapping[mapping_it] != NULL) {
             if(find_array_in_array(array, array_bytes, (const uint8_t*)ams_known_list_ids_mapping[mapping_it]->list_id, ams_known_list_ids_mapping[mapping_it]->list_id_size)) {
-                DPRINTF("Found meter type %s\n", ams_known_list_ids_mapping[mapping_it]->list_id);
+                DPRINTF("Found updated meter type %s\n", ams_known_list_ids_mapping[mapping_it]->list_id);
 
                 // TODO: anything else to reset upon meter type detection?
                 meter_type_id = ams_known_list_ids_mapping[mapping_it]->list_id_version;
-                memcpy(meter_type, ams_known_list_ids_mapping[mapping_it]->list_id, ams_known_list_ids_mapping[mapping_it]->list_id_size);
-                meter_type[ams_known_list_ids_mapping[mapping_it]->list_id_size] = 0;
                 break;
             }
             mapping_it++;
@@ -364,36 +457,37 @@ bool parse_cosem(uint8_t* array, size_t array_bytes)
             reset_parser("Could not auto-detect meter type\n");
             return false;
         }
+    } else {
+      // We'll assume it's a short list...
     }
   }
 
   uint8_t* temp_item_ptr;
   size_t temp_item_size;
+  cosem_type_t item_type;
+  size_t meter_gsin_length = 0;
+  size_t meter_model_length = 0;
   bool item_found = false;
 
   if(item_counter == 1) {
       // single item message, assume it is reactive import power
-      item_found = get_element_by_sequence_number(array, array_bytes, 1, &temp_item_ptr, &temp_item_size);
+      item_found = get_element_by_sequence_number(array, array_bytes, 1, &temp_item_ptr, &temp_item_size, &item_type);
       if(item_found && temp_item_size == 4) {
-          active_power_watt = (temp_item_ptr[0] << 24) | (temp_item_ptr[1] << 16) | (temp_item_ptr[2] << 8) | (temp_item_ptr[3] << 0);
-          DPRINTF("Active power: %u watt\n", active_power_watt);
-          list1_recv = true;
-          if(list1_updated_cb != NULL) {
-              list1_updated_cb();
-          }
+          parsed_data.active_power_import = parse_uint(temp_item_ptr, temp_item_size, TYPE_UINT, 0);
+          parsed_data.has_power_data = true;
+
+          DPRINTF("Active power: %u watt\n", parsed_data.active_power_import);
           return true;
       }
       return false;
   } else if(item_counter == 4) {
       // assume it's an Aidon single item message with reactive import power
-      item_found = get_element_by_sequence_number(array, array_bytes, 2, &temp_item_ptr, &temp_item_size);
+      item_found = get_element_by_sequence_number(array, array_bytes, 2, &temp_item_ptr, &temp_item_size, &item_type);
       if(item_found && temp_item_size == 4) {
-          active_power_watt = (temp_item_ptr[0] << 24) | (temp_item_ptr[1] << 16) | (temp_item_ptr[2] << 8) | (temp_item_ptr[3] << 0);
-          DPRINTF("Active power: %u watt\n", active_power_watt);
-          list1_recv = true;
-          if(list1_updated_cb != NULL) {
-              list1_updated_cb();
-          }
+          parsed_data.active_power_import = parse_uint(temp_item_ptr, temp_item_size, TYPE_UINT, 0);
+          parsed_data.has_power_data = true;
+
+          DPRINTF("Active power: %u watt\n", parsed_data.active_power_import);
           return true;
       }
       return false;
@@ -415,12 +509,9 @@ bool parse_cosem(uint8_t* array, size_t array_bytes)
           return false;
       }
 
-      // Go through all the mappings
-      bool have_accumulated_consumption = false;
-
       size_t mapping_it = 0;
       while(detected_list->mappings[mapping_it].element != END_OF_LIST) {
-          item_found = get_element_by_sequence_number(array, array_bytes, detected_list->mappings[mapping_it].cosem_element_offset, &temp_item_ptr, &temp_item_size);
+          item_found = get_element_by_sequence_number(array, array_bytes, detected_list->mappings[mapping_it].cosem_element_offset, &temp_item_ptr, &temp_item_size, &item_type);
           if(!item_found) {
               reset_parser("Could not find item from predefined list :/\n");
               return false;
@@ -428,88 +519,101 @@ bool parse_cosem(uint8_t* array, size_t array_bytes)
 
           switch(detected_list->mappings[mapping_it].element) {
             case ACTIVE_POWER_IMPORT:
-              active_power_watt = (temp_item_ptr[0] << 24) | (temp_item_ptr[1] << 16) | (temp_item_ptr[2] << 8) | (temp_item_ptr[3] << 0);
-              list1_recv = true;
-              DPRINTF("Active power: %u watt\n", active_power_watt);
+              parsed_data.active_power_import = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent);
+              parsed_data.has_power_data = true;
+              DPRINTF("Active power: %u watt\n", parsed_data.active_power_import);
+              break;
+            case ACTIVE_POWER_EXPORT:
+              parsed_data.active_power_export = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent);
+              parsed_data.has_line_data = true;
+              DPRINTF("Active power (export): %u watt\n", parsed_data.active_power_export);
+              break;
+            case REACTIVE_POWER_IMPORT:
+              parsed_data.reactive_power_import = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent);
+              parsed_data.has_line_data = true;
+              DPRINTF("Active power (export): %u watt\n", parsed_data.reactive_power_import);
+              break;
+            case REACTIVE_POWER_EXPORT:
+              parsed_data.reactive_power_export = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent);
+              parsed_data.has_line_data = true;
+              DPRINTF("Active power (export): %u watt\n", parsed_data.reactive_power_export);
               break;
             case METER_ID:
-              //TODO: trigger something on change of meter ID?
-              memcpy(meter_id, temp_item_ptr, temp_item_size);
-              memset(&meter_id[temp_item_size], 0, sizeof(meter_id) - temp_item_size);
               DPRINT("Meter ID: ");
               for(size_t i = 0; i < temp_item_size; i++) {
-                  DPRINTF("%c", meter_id[i]);
+                  DPRINTF("%c", temp_item_ptr[i]);
               }
               DPRINT("\n");
-              list2_recv = true;
+
+              parsed_data.meter_gsin = (char*)temp_item_ptr;
+              meter_gsin_length = temp_item_size;
+              parsed_data.has_meter_data = true;
               break;
             case METER_TYPE:
-              memcpy(meter_model, temp_item_ptr, temp_item_size);
-              memset(&meter_model[temp_item_size], 0, sizeof(meter_model) - temp_item_size);
               DPRINT("Meter model: ");
               for(size_t i = 0; i < temp_item_size; i++) {
-                  DPRINTF("%c", meter_model[i]);
+                  DPRINTF("%c", temp_item_ptr[i]);
               }
               DPRINT("\n");
-              list2_recv = true;
+
+              parsed_data.meter_model = (char*)temp_item_ptr;
+              meter_model_length = temp_item_size;
+              parsed_data.has_meter_data = true;
               break;
             case CURRENT_L1:
-              current_l1 = ((int32_t)((int8_t)temp_item_ptr[0]) << 8) | (temp_item_ptr[1] << 0);
-              if(detected_list->mappings[mapping_it].exponent == -1) {
-                  current_l1 /= 10;
-              }
-              DPRINTF("Current L1 %d A\n", current_l1);
-              list2_recv = true;
+              parsed_data.current_l1 = parse_int(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent + 3);
+              DPRINTF("Current L1 %d.%03u A\n", parsed_data.current_l1 / 1000, parsed_data.current_l1 % 1000);
+              parsed_data.has_line_data = true;
               break;
             case CURRENT_L2:
-              current_l2 = ((int32_t)((int8_t)temp_item_ptr[0]) << 8) | (temp_item_ptr[1] << 0);
-              if(detected_list->mappings[mapping_it].exponent == -1) {
-                  current_l2 /= 10;
-              }
-              DPRINTF("Current L2 %d A\n", current_l2);
-              list2_recv = true;
+              parsed_data.current_l2 = parse_int(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent + 3);
+              DPRINTF("Current L2 %d.%03u A\n",  parsed_data.current_l2 / 1000, parsed_data.current_l2 % 1000);
+              parsed_data.has_line_data = true;
+              parsed_data.is_3p = true;
               break;
             case CURRENT_L3:
-              current_l3 = ((int32_t)((int8_t)temp_item_ptr[0]) << 8) | (temp_item_ptr[1] << 0);
-              if(detected_list->mappings[mapping_it].exponent == -1) {
-                  current_l3 /= 10;
-              }
-              DPRINTF("Current L3 %d A\n", current_l3);
-              list2_recv = true;
+              parsed_data.current_l3 = parse_int(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent + 3);
+              DPRINTF("Current L3 %d.%03u A\n",  parsed_data.current_l3 / 1000, parsed_data.current_l3 % 1000);
+              parsed_data.has_line_data = true;
+              parsed_data.is_3p = true;
               break;
             case VOLTAGE_L1:
-              voltage_l1 = (temp_item_ptr[0] << 8) | (temp_item_ptr[1] << 0);
-              if(detected_list->mappings[mapping_it].exponent == -1) {
-                  voltage_l1 /= 10;
-              }
-              DPRINTF("Voltage L1 %d V\n", voltage_l1);
-              list2_recv = true;
+              parsed_data.voltage_l1 = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent);
+              DPRINTF("Voltage L1 %u V\n", parsed_data.voltage_l1);
+              parsed_data.has_line_data = true;
+              parsed_data.is_3p = true;
               break;
             case VOLTAGE_L2:
-              voltage_l2 = (temp_item_ptr[0] << 8) | (temp_item_ptr[1] << 0);
-              if(detected_list->mappings[mapping_it].exponent == -1) {
-                  voltage_l2 /= 10;
-              }
-              DPRINTF("Voltage L2 %d V\n", voltage_l2);
-              list2_recv = true;
+              parsed_data.voltage_l2 = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent);
+              DPRINTF("Voltage L2 %u V\n", parsed_data.voltage_l2);
+              parsed_data.has_line_data = true;
+              parsed_data.is_3p = true;
               break;
             case VOLTAGE_L3:
-              voltage_l3 = (temp_item_ptr[0] << 8) | (temp_item_ptr[1] << 0);
-              if(detected_list->mappings[mapping_it].exponent == -1) {
-                  voltage_l3 /= 10;
-              }
-              DPRINTF("Voltage L3 %d V\n", voltage_l3);
-              list2_recv = true;
-              break;
+              parsed_data.voltage_l3 = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent);
+              DPRINTF("Voltage L3 %u V\n", parsed_data.voltage_l3);
+              parsed_data.has_line_data = true;
+              parsed_data.is_3p = true;
               break;
             case ACTIVE_ENERGY_IMPORT:
-              have_accumulated_consumption = true;
-              total_meter_reading = (temp_item_ptr[0] << 24) | (temp_item_ptr[1] << 16) | (temp_item_ptr[2] << 8) | (temp_item_ptr[3] << 0);
-              if(detected_list->mappings[mapping_it].exponent == 1) {
-                  total_meter_reading *= 10;
-              }
-              DPRINTF("Total meter reading %d Wh\n", total_meter_reading);
-              list3_recv = true;
+              parsed_data.active_energy_import = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent + 3);
+              DPRINTF("Total active energy import %d Wh\n", parsed_data.active_energy_import);
+              parsed_data.has_energy_data = true;
+              break;
+            case ACTIVE_ENERGY_EXPORT:
+              parsed_data.active_energy_export = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent + 3);
+              DPRINTF("Total active energy export %d Wh\n", parsed_data.active_energy_export);
+              parsed_data.has_energy_data = true;
+              break;
+            case REACTIVE_ENERGY_IMPORT:
+              parsed_data.reactive_energy_import = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent + 3);
+              DPRINTF("Total reactive energy import %d Wh\n", parsed_data.reactive_energy_import);
+              parsed_data.has_energy_data = true;
+              break;
+            case REACTIVE_ENERGY_EXPORT:
+              parsed_data.reactive_energy_export = parse_uint(temp_item_ptr, temp_item_size, item_type, detected_list->mappings[mapping_it].exponent + 3);
+              DPRINTF("Total reactive energy export %d Wh\n", parsed_data.reactive_energy_export);
+              parsed_data.has_energy_data = true;
               break;
             default:
               break;
@@ -517,17 +621,17 @@ bool parse_cosem(uint8_t* array, size_t array_bytes)
           mapping_it++;
       }
 
-      if(have_accumulated_consumption && list3_updated_cb != NULL) {
-          list3_updated_cb();
-      } else if(!have_accumulated_consumption && list2_updated_cb != NULL) {
-          list2_updated_cb();
+      if(parsed_data.has_meter_data) {
+        // NULL-terminate now that we're done with the packet
+        ((uint8_t*)parsed_data.meter_gsin)[meter_gsin_length] = 0;
+        ((uint8_t*)parsed_data.meter_model)[meter_model_length] = 0;
       }
   }
 
-  return false;
+  return true;
 }
 
-void parse_msdu(uint8_t* start, size_t bytes)
+static void parse_msdu(uint8_t* start, size_t bytes)
 {
   if(bytes < 8)
     return reset_parser("Too little data in the MSDU\n");
@@ -545,10 +649,12 @@ void parse_msdu(uint8_t* start, size_t bytes)
   }
   DPRINT("\n");
 
-  parse_cosem(&start[8], bytes - 8);
+  if(parse_cosem(&start[8], bytes - 8) && cb != NULL) {
+    cb(&parsed_data);
+  }
 }
 
-void input_byte(uint8_t byte)
+void han_parser_input_byte(uint8_t byte)
 {
   // go through the processing loop...
 
@@ -650,6 +756,11 @@ void input_byte(uint8_t byte)
       reset_parser(NULL);
       input_buffer_pos = 1; // allow restarted communication (shared flag for end and start)
   }
+}
+
+void han_parser_set_callback(han_parser_message_decoded_cb_t func)
+{
+  cb = func;
 }
 
 #ifdef __cplusplus

@@ -35,12 +35,10 @@ extern "C"
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "ams/known_lists.h"
 
 extern uint32_t active_power_watt;
 
 extern char meter_type[16];
-extern ams_known_list_ids_t meter_type_id;
 extern char meter_id[20];
 extern char meter_model[20];
 extern uint32_t voltage_l1;
@@ -61,12 +59,6 @@ extern bool list2_recv;
 extern bool is_3phase;
 // list3 received = total meter reading and time/date valid
 extern bool list3_recv;
-
-typedef void (*list_updated_cb_t)(void);
-extern list_updated_cb_t list1_updated_cb;
-extern list_updated_cb_t list2_updated_cb;
-extern list_updated_cb_t list3_updated_cb;
-extern list_updated_cb_t metertype_updated_cb;
 
 #ifdef __cplusplus
 }

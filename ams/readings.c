@@ -35,7 +35,6 @@ extern "C"
 uint32_t active_power_watt = 0;
 
 char meter_type[16] = {0};
-ams_known_list_ids_t meter_type_id = UNKNOWN;
 char meter_id[20] = {0};
 char meter_model[20] = {0};
 
@@ -58,11 +57,6 @@ bool list2_recv = false;
 bool is_3phase = false;
 // list3 received = total meter reading and time/date valid
 bool list3_recv = false;
-
-list_updated_cb_t list1_updated_cb = NULL;
-list_updated_cb_t list2_updated_cb = NULL;
-list_updated_cb_t list3_updated_cb = NULL;
-list_updated_cb_t metertype_updated_cb = NULL;
 
 #ifdef __cplusplus
 }

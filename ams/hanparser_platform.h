@@ -25,8 +25,8 @@
  *
  *******************************************************************************/
 
-#ifndef AMS_HANPARSER_H_
-#define AMS_HANPARSER_H_
+#ifndef AMS_HANPARSER_PLATFORM_H_
+#define AMS_HANPARSER_PLATFORM_H_
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -50,4 +50,4 @@ void han_parser_debug_printf(const char* msg, ...);
 }
 #endif
 
-#endif /* AMS_HANPARSER_H_ */
+#endif /* AMS_HANPARSER_PLATFORM_H_ */
