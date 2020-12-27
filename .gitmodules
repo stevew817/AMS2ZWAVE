@@ -1,0 +1,3 @@
+[submodule "ams"]
+	path = ams
+	url = git@github.com:stevew817/ams-han-parser.git
