@@ -26,11 +26,14 @@
  *******************************************************************************/
 #include "ams/hanparser_platform.h"
 
+// Calculate CRC using dedicated hardware
 #include "em_gpcrc.h"
 
-#define DEBUGPRINT
+// Use Z-Wave SDK's debug print functions
 #include "DebugPrint.h"
 
+// In order to redirect a variadic printf-style debug print function, we need to
+// include support for variadic functions and an implementation of vsnprintf.
 #include <stdarg.h>
 #include <stdio.h>
 
