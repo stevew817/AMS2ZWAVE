@@ -119,7 +119,6 @@ Norwegian market. Shouldn't be much of an issue, since the firmware does support
 
 Todo:
 * Implement configuration CC to support changing the reporting frequency
-* Implement power averaging based on the quick updates in-between reports
 * Add separate endpoints for getting phase-specific values on three-phase meters (root endpoint reports total values).
 
 To build the firmware:

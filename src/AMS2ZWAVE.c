@@ -117,6 +117,25 @@
 #include "readings.h"
 #include "em_usart.h"
 
+/*********************** AMS2ZWAVE function prototypes ************************/
+void HAN_callback(const han_parser_data_t* decoded_data);
+void HAN_serial_rx();
+void HAN_pkt_rx(void);
+void HAN_setup();
+void HAN_loadFromNVM(void);
+void HAN_storeToNVM(bool update_meter, bool update_accumulated);
+void HAN_resetNVM(void);
+
+void CC_Meter_update_power(void);
+void CC_Meter_update_energy(void);
+
+received_frame_status_t
+handleCommandClassMeter(
+  RECEIVE_OPTIONS_TYPE_EX *rxOpt,
+  ZW_APPLICATION_TX_BUFFER *pCmd,
+  uint8_t cmdLength);
+/******************* end AMS2ZWAVE function prototypes ************************/
+
 /****************************************************************************/
 /* Application specific button and LED definitions                          */
 /****************************************************************************/
@@ -287,7 +306,8 @@ typedef enum EApplicationEvent
   EAPPLICATIONEVENT_TIMER = 0,
   EAPPLICATIONEVENT_ZWRX,
   EAPPLICATIONEVENT_ZWCOMMANDSTATUS,
-  EAPPLICATIONEVENT_APP
+  EAPPLICATIONEVENT_SERIALDATARX,
+  EAPPLICATIONEVENT_APP,
 } EApplicationEvent;
 
 static void EventHandlerZwRx(void);
@@ -298,12 +318,13 @@ static void EventHandlerApp(void);
 static SEventDistributor g_EventDistributor;
 
 // Event distributor event handler table
-static const EventDistributorEventHandler g_aEventHandlerTable[4] =
+static const EventDistributorEventHandler g_aEventHandlerTable[] =
 {
   AppTimerNotificationHandler,  // Event 0
   EventHandlerZwRx,
   EventHandlerZwCommandStatus,
-  EventHandlerApp
+  HAN_serial_rx,
+  EventHandlerApp,
 };
 
 // Used by the application data file.
@@ -378,24 +399,6 @@ SApplicationData readAppData(void);
 void writeAppData(const SApplicationData* pAppData);
 
 void AppResetNvm(void);
-
-/*********************** AMS2ZWAVE function prototypes ************************/
-void HAN_callback(const han_parser_data_t* decoded_data);
-void HAN_serial_rx();
-void HAN_setup();
-void HAN_loadFromNVM(void);
-void HAN_storeToNVM(bool update_meter, bool update_accumulated);
-void HAN_resetNVM(void);
-
-void CC_Meter_update_power(void);
-void CC_Meter_update_energy(void);
-
-received_frame_status_t
-handleCommandClassMeter(
-  RECEIVE_OPTIONS_TYPE_EX *rxOpt,
-  ZW_APPLICATION_TX_BUFFER *pCmd,
-  uint8_t cmdLength);
-/******************* end AMS2ZWAVE function prototypes ************************/
 
 /**
 * @brief Called when protocol puts a frame on the ZwRxQueue.
@@ -854,7 +857,7 @@ AppStateManager(EVENT_APP event)
   }
 
   if(event == EVENT_APP_SERIAL_RECV) {
-      HAN_serial_rx();
+      HAN_pkt_rx();
   }
 
   switch(currentState)
@@ -947,7 +950,7 @@ AppStateManager(EVENT_APP event)
 
       // ACTION: report on hourly update
       if (EVENT_APP_ENERGY_UPDATE == event) {
-        if(ApplicationData.turn_off_hourly_report > 0) {
+        if(ApplicationData.turn_off_hourly_report == 0) {
           CC_Meter_update_energy();
         }
       }
@@ -1207,8 +1210,25 @@ readAppData(void)
 {
   SApplicationData AppData;
   Ecode_t errCode = nvm3_readData(pFileSystemApplication, FILE_ID_APPLICATIONDATA, &AppData, sizeof(SApplicationData));
-  ASSERT(ECODE_NVM3_OK == errCode); //Assert has been kept for debugging , can be removed from production code. This error hard to occur when a corresponing write is successfull
-                                    //Can only happended in case of some hardware failure
+
+  // Reset to default if the data got corrupted or not migrated properly
+  if(errCode == ECODE_NVM3_ERR_KEY_NOT_FOUND ||
+     errCode == ECODE_NVM3_ERR_READ_DATA_SIZE) {
+    // Report at least every 30 seconds
+    ApplicationData.amount_of_10s_reports_for_meter_report = 3;
+
+    // Report on power level change > 0.5kW from last reported value
+    ApplicationData.power_change_for_meter_report = 5;
+
+    // Report hourly updates by default
+    ApplicationData.turn_off_hourly_report = 0;
+
+    writeAppData(&ApplicationData);
+  } else {
+    DPRINTF("Error code %d\n", errCode);
+    ASSERT(ECODE_NVM3_OK == errCode); //Assert has been kept for debugging , can be removed from production code. This error hard to occur when a corresponing write is successfull
+                                      //Can only happended in case of some hardware failure
+  }
 
   return AppData;
 }
@@ -1275,80 +1295,169 @@ void CC_ManufacturerSpecific_DeviceSpecificGet_handler(device_id_type_t * pDevic
 /*******************************************************************************
  * AMS2ZWAVE: HAN handling from here on down
  ******************************************************************************/
-/*
- * USART0 RX example https://www.silabs.com/community/wireless/z-wave/knowledge-base.entry.html/2019/04/26/z-wave_700_how_toi-7ckT
+/* Set up a double-buffered USART RX for receiving HAN frames
+ *
+ * Concept: At any given point in time, there's an active buffer and a shadow
+ * buffer. The USART RX ISR is always pointed at the active buffer, and will
+ * 'dumbly' fill the active buffer until it runs out of space, after which point
+ * it will simply drop the incoming bytes.
+ * This is done both for speed, and to avoid synchronisation constructs between
+ * the application and the ISR.
+ *
+ * The application side gets notified by the ISR when the ISR starts filling an
+ * active buffer which previously was empty.
+ *
+ * The application will then, at its own leisure, get around to handling the
+ * notification. At that point, the application swaps the buffers around by
+ * pointing the ISR at the other buffer, making the shadow buffer the new
+ * (empty) active buffer, and the previously-active buffer the shadow buffer.
+ * The application can then parse the contents of the shadow buffer independent
+ * of what the ISR is doing.
+ *
+ * In this way, the distribution between read and write operations is:
+ * * From ISR:
+ *   - Active buffer data: W
+ *   - Active buffer size: R/W
+ *   - Shadow buffer data: not accessed
+ *   - Shadow buffer size: not accessed
+ *   - buffer pointer: R
+ * * From application:
+ *   - Active buffer data: not accessed
+ *   - Active buffer size: not accessed
+ *   - Shadow buffer data: R/W
+ *   - Shadow buffer size: R/W
+ *   - buffer pointer: R/W
+ *
+ * Meaning no potential for write conflicts between application and ISR, and
+ * therefore not required to fiddle with critical sections or IRQ priorities.
  */
-
-/* Declare a circular buffer structure to use for Rx queue */
 #define BUFFERSIZE           512
 static USART_TypeDef *uart = USART0;
 
-volatile struct circularBuffer
+volatile struct hanBuffer
 {
-  uint8_t  data[BUFFERSIZE];  /* data buffer */
-  uint32_t rdI;               /* read index */
-  uint32_t wrI;               /* write index */
-  uint32_t pendingBytes;      /* count of how many bytes are not yet handled */
-  bool     overflow;          /* buffer overflow indicator */
-  bool     enqueued;          /* event is already triggered */
-} rxBuf = { {0}, 0, 0, 0, false, false };
+  volatile uint8_t  data[2][BUFFERSIZE];
+  volatile size_t   data_size[2];   /* Amount of bytes in the buffer. If the
+                                     * application is done reading a buffer,
+                                     * this needs to be set to all-FF. */
+  volatile size_t   active_buffer;  /* which buffer index is currently active */
+} rxBuf = { { {0}, {0} }, { 0xFFFFFFFFUL, 0xFFFFFFFFUL }, 0 };
 
-/*
- * USART1 RX interrupt handler
- *
- * Must follow the naming defined startup_efr32fg13p.c
- *   (See also: https://www.silabs.com/community/mcu/32-bit/knowledge-base.entry.html/2014/11/19/efm32_isr_naming-Azu3)
- */
+// The interrupt handler fills the 'active buffer' until it runs out of space
+// The application is responsible for swapping the buffers fast enough to
+// prevent the buffer filling from dropping bytes.
 void USART0_RX_IRQHandler(void)
 {
-  /* Check for RX data valid interrupt */
-  if (uart->STATUS & USART_STATUS_RXDATAV)
+  /* Act on RX data valid interrupt */
+  while (uart->STATUS & USART_STATUS_RXDATAV)
   {
-    /* Copy data into RX Buffer */
-    uint8_t rxData = USART_Rx(uart);
-    rxBuf.data[rxBuf.wrI] = rxData;
-    rxBuf.wrI             = (rxBuf.wrI + 1) % BUFFERSIZE;
-    rxBuf.pendingBytes++;
+    uint8_t active_buffer = rxBuf.active_buffer;
+    size_t current_size = rxBuf.data_size[active_buffer];
+    uint8_t data_byte = USART_Rx(uart);
 
-    /* Flag Rx overflow */
-    if (rxBuf.pendingBytes > BUFFERSIZE)
-    {
-      rxBuf.overflow = true;
+    // If we've been pointed at an empty buffer, start filling it and notify the
+    // application there's data to be had.
+    if(current_size == 0xFFFFFFFFUL) {
+      rxBuf.data[active_buffer][0] = data_byte;
+      rxBuf.data_size[active_buffer] = 1;
+
+      xTaskNotifyFromISR(g_AppTaskHandle,
+                         1 << EAPPLICATIONEVENT_SERIALDATARX,
+                         eSetBits,
+                         NULL);
+      continue;
     }
 
-    //
-    // Put code here to send event/data to application task
-    //
-    if(!rxBuf.enqueued) {
-      ZAF_EventHelperEventEnqueueFromISR(EVENT_APP_SERIAL_RECV);
-      rxBuf.enqueued = true;
+    // If we've been pointed at a buffer in progress, fill it up as long as
+    // there's room
+    if(current_size < sizeof(rxBuf.data[0])) {
+      rxBuf.data[active_buffer][current_size] = data_byte;
+      rxBuf.data_size[active_buffer] = current_size + 1;
+      continue;
     }
 
-    /* Clear RXDATAV interrupt */
-    USART_IntClear(USART0, USART_IF_RXDATAV);
+    // When ending up down here, it means we've ran out of buffer to write bytes
+    // into. Too bad. Flag this condition to the application by setting the size
+    // to the buffer size + 1;
+    if(current_size == sizeof(rxBuf.data[0])) {
+      rxBuf.data_size[active_buffer] = current_size + 1;
+      continue;
+    }
   }
 }
 
+// The system will call this function at its own pace when poked by the ISR.
+// Swapping the buffer needs to be done before the incoming data stream can
+// manage to fill it up, so how much time you have would be a function of how
+// quickly you can parse the data, how big the buffers are, and how fast the
+// data is coming in.
+void HAN_serial_rx(void)
+{
+  // Perform a buffer swap before parsing the data
+  uint8_t read_buffer = rxBuf.active_buffer;
+  rxBuf.active_buffer = (read_buffer + 1) & 0x1UL;
+
+  // Pump all bytes from what was the active buffer
+  size_t bytes = rxBuf.data_size[read_buffer];
+
+  DPRINTF("Pumping %d bytes\n", bytes);
+  for(size_t i = 0; i < bytes; i++) {
+    han_parser_input_byte(rxBuf.data[read_buffer][i]);
+  }
+
+  rxBuf.data_size[read_buffer] = 0xFFFFFFFFUL;
+}
+
 // Business logic goes here!
+static han_parser_data_t parser_data;
+
+// Receive decoded packet from parser and trigger event
 void HAN_callback(const han_parser_data_t* decoded_data) {
+  memcpy(&parser_data, decoded_data, sizeof(parser_data));
+  ZAF_EventHelperEventEnqueue(EVENT_APP_SERIAL_RECV);
+}
+
+void HAN_pkt_rx(void) {
   bool is_list2 = false;
   bool is_list3 = false;
 
-  if(decoded_data->has_power_data) {
-      active_power_watt = decoded_data->active_power_import;
-      list1_recv = true;
-  }
+  han_parser_data_t* decoded_data = &parser_data;
 
   if(decoded_data->has_meter_data) {
     if(memcmp(meter_id, decoded_data->meter_gsin, strlen(decoded_data->meter_gsin) + 1) != 0) {
       // We got attached to a different meter than the one we were previously attached to
       // invalidate persistently stored parameters
       HAN_resetNVM();
+
+      // reset all in-RAM values too
+      active_power_watt = 0;
+      last_reported_power_watt = 0;
+
+      voltage_l1 = 0;
+      voltage_l2 = 0;
+      voltage_l3 = 0;
+
+      current_l1 = 0;
+      current_l2 = 0;
+      current_l3 = 0;
+
+      // Store new meter identity
+      memcpy(meter_id, decoded_data->meter_gsin,
+        (sizeof(meter_id) < strlen(decoded_data->meter_gsin) + 1 ?
+          sizeof(meter_id) :
+          strlen(decoded_data->meter_gsin) + 1) );
+      memcpy(meter_model, decoded_data->meter_model,
+        (sizeof(meter_model) < strlen(decoded_data->meter_model) + 1 ?
+          sizeof(meter_model) :
+          strlen(decoded_data->meter_gsin) + 1) );
+
       HAN_storeToNVM(true, false);
     }
+  }
 
-    is_list2 = true;
-    list2_recv = true;
+  if(decoded_data->has_power_data) {
+      active_power_watt = decoded_data->active_power_import;
+      list1_recv = true;
   }
 
   if(decoded_data->has_energy_data) {
@@ -1373,6 +1482,12 @@ void HAN_callback(const han_parser_data_t* decoded_data) {
       list2_recv = true;
   }
 
+  if((is_list3 || is_list2) &&
+     currentState != STATE_APP_LEARN_MODE) {
+    // Indicate activity using the indicator LED
+    Board_IndicatorControl(200, 800, 1, false);
+  }
+
   if(is_list3) {
       DPRINT("Triggering list3 event\n");
       ZAF_EventHelperEventEnqueue(EVENT_APP_ENERGY_UPDATE);
@@ -1383,37 +1498,6 @@ void HAN_callback(const han_parser_data_t* decoded_data) {
       DPRINT("Triggering list1 event\n");
       ZAF_EventHelperEventEnqueue(EVENT_APP_POWER_UPDATE_FAST);
   }
-}
-
-void HAN_serial_rx(void)
-{
-  // for each byte in the receive buffer, push it into the parser
-  if(rxBuf.overflow) {
-      DPRINT("UART OVF\n");
-      taskENTER_CRITICAL();
-      rxBuf.rdI = 0;
-      rxBuf.wrI = 0;
-      rxBuf.pendingBytes = 0;
-      rxBuf.overflow = false;
-      taskEXIT_CRITICAL();
-  }
-
-read:
-  while(rxBuf.pendingBytes > 0) {
-      han_parser_input_byte(rxBuf.data[rxBuf.rdI]);
-      rxBuf.rdI = (rxBuf.rdI + 1) % BUFFERSIZE;
-      taskENTER_CRITICAL();
-      rxBuf.pendingBytes--;
-      taskEXIT_CRITICAL();
-  }
-
-  taskENTER_CRITICAL();
-  if(rxBuf.pendingBytes > 0) {
-      taskEXIT_CRITICAL();
-      goto read;
-  }
-  rxBuf.enqueued = false;
-  taskEXIT_CRITICAL();
 }
 
 void HAN_setup(void)
@@ -1437,6 +1521,13 @@ void HAN_setup(void)
 #define FILE_ID_MODEL 0x0011
 #define FILE_ID_ACCUMULATED 0x0020
 #define FILE_ID_ACCUMULATED_RESET 0x0021
+
+void HAN_printPersistentData(void) {
+  DPRINTF("Meter GSIN: %s\n", meter_id);
+  DPRINTF("Meter model: %s\n", meter_model);
+  DPRINTF("Last reading: %u.%u kWh\n", total_meter_reading / 1000, total_meter_reading % 1000);
+  DPRINTF("ZWave reset value: %u.%u kWh\n", meter_offset / 1000, meter_offset % 1000);
+}
 
 void HAN_loadFromNVM(void) {
   // Load persistently saved values from NVM at startup
@@ -1476,6 +1567,10 @@ void HAN_loadFromNVM(void) {
     // Need to reset NVM since something went wrong
     return HAN_resetNVM();
   }
+
+  DPRINT("Loaded meter data from NVM:\n");
+  HAN_printPersistentData();
+  DPRINT("===========================\n");
 }
 
 void HAN_storeToNVM(bool update_meter, bool update_accumulated) {
@@ -1504,6 +1599,10 @@ void HAN_storeToNVM(bool update_meter, bool update_accumulated) {
                           FILE_ID_ACCUMULATED_RESET, &meter_offset, sizeof(meter_offset));
     ASSERT(ECODE_NVM3_OK == result);
   }
+
+  DPRINT("Stored meter data to NVM:\n");
+  HAN_printPersistentData();
+  DPRINT("===========================\n");
 }
 
 void HAN_resetNVM(void) {
@@ -1515,6 +1614,7 @@ void HAN_resetNVM(void) {
   // Invalidate reporting accumulated data
   list2_recv = false;
   list3_recv = false;
+  is_3phase = false;
 
   // Set GSIN to {0}
   Ecode_t result = nvm3_writeData(pFileSystemApplication,
@@ -1535,6 +1635,10 @@ void HAN_resetNVM(void) {
   result = nvm3_writeData(pFileSystemApplication,
                           FILE_ID_ACCUMULATED_RESET, &meter_offset, sizeof(meter_offset));
   ASSERT(ECODE_NVM3_OK == result);
+
+  DPRINT("Reset meter data in NVM:\n");
+  HAN_printPersistentData();
+  DPRINT("===========================\n");
 }
 
 /*******************************************************************************

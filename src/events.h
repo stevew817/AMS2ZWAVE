@@ -59,7 +59,7 @@ typedef enum EVENT_APP_AMS2ZWAVE
   EVENT_APP_TOGGLE_LEARN_MODE,
   EVENT_APP_SMARTSTART_IN_PROGRESS,
   EVENT_APP_LEARN_IN_PROGRESS,
-  EVENT_APP_SERIAL_RECV,       // fires when not triggered yet and a character arrives on the serial port
+  EVENT_APP_SERIAL_RECV,       // fires when a packet becomes available
   EVENT_APP_POWER_UPDATE_FAST, // fires each 2.5s when a meter is connected
   EVENT_APP_POWER_UPDATE_SLOW, // fires each 10s when a meter is connected
   EVENT_APP_ENERGY_UPDATE      // fires each 3600s when a meter is connected
