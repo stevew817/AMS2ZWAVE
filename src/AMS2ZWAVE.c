@@ -1283,7 +1283,6 @@ void CC_ManufacturerSpecific_DeviceSpecificGet_handler(device_id_type_t * pDevic
  * therefore not required to fiddle with critical sections or IRQ priorities.
  */
 #define BUFFERSIZE           512
-static USART_TypeDef *uart = USART0;
 
 volatile struct hanBuffer
 {
@@ -1297,14 +1296,57 @@ volatile struct hanBuffer
 // The interrupt handler fills the 'active buffer' until it runs out of space
 // The application is responsible for swapping the buffers fast enough to
 // prevent the buffer filling from dropping bytes.
+
+// Allow HAN input on USART0 (debug USART)
 void USART0_RX_IRQHandler(void)
 {
   /* Act on RX data valid interrupt */
-  while (uart->STATUS & USART_STATUS_RXDATAV)
+  while (USART0->STATUS & USART_STATUS_RXDATAV)
   {
     uint8_t active_buffer = rxBuf.active_buffer;
     size_t current_size = rxBuf.data_size[active_buffer];
-    uint8_t data_byte = USART_Rx(uart);
+    uint8_t data_byte = USART_Rx(USART0);
+
+    // If we've been pointed at an empty buffer, start filling it and notify the
+    // application there's data to be had.
+    if(current_size == 0xFFFFFFFFUL) {
+      rxBuf.data[active_buffer][0] = data_byte;
+      rxBuf.data_size[active_buffer] = 1;
+
+      xTaskNotifyFromISR(g_AppTaskHandle,
+                         1 << EAPPLICATIONEVENT_SERIALDATARX,
+                         eSetBits,
+                         NULL);
+      continue;
+    }
+
+    // If we've been pointed at a buffer in progress, fill it up as long as
+    // there's room
+    if(current_size < sizeof(rxBuf.data[0])) {
+      rxBuf.data[active_buffer][current_size] = data_byte;
+      rxBuf.data_size[active_buffer] = current_size + 1;
+      continue;
+    }
+
+    // When ending up down here, it means we've ran out of buffer to write bytes
+    // into. Too bad. Flag this condition to the application by setting the size
+    // to the buffer size + 1;
+    if(current_size == sizeof(rxBuf.data[0])) {
+      rxBuf.data_size[active_buffer] = current_size + 1;
+      continue;
+    }
+  }
+}
+
+// Allow HAN input on USART1, too
+void USART1_RX_IRQHandler(void)
+{
+  /* Act on RX data valid interrupt */
+  while (USART1->STATUS & USART_STATUS_RXDATAV)
+  {
+    uint8_t active_buffer = rxBuf.active_buffer;
+    size_t current_size = rxBuf.data_size[active_buffer];
+    uint8_t data_byte = USART_Rx(USART1);
 
     // If we've been pointed at an empty buffer, start filling it and notify the
     // application there's data to be had.
@@ -1445,6 +1487,9 @@ void HAN_callback(const han_parser_data_t* decoded_data) {
 
 void HAN_setup(void)
 {
+  // Turn on uart1 for HAN input @ 2400 baud
+  ZAF_UART1_enable(2400, false, true);
+
   // Turn on GPCRC for HAN parser
   CMU_ClockEnable(cmuClock_HFPER, true);
   CMU_ClockEnable(cmuClock_GPCRC, true);
@@ -1455,6 +1500,12 @@ void HAN_setup(void)
   USART_IntEnable(USART0, USART_IF_RXDATAV);
   NVIC_ClearPendingIRQ(USART0_RX_IRQn);
   NVIC_EnableIRQ(USART0_RX_IRQn);
+
+  CMU_ClockEnable(cmuClock_USART1, true);
+  USART_IntClear(USART1, _USART_IF_MASK);
+  USART_IntEnable(USART1, USART_IF_RXDATAV);
+  NVIC_ClearPendingIRQ(USART1_RX_IRQn);
+  NVIC_EnableIRQ(USART1_RX_IRQn);
 
   han_parser_set_callback(&HAN_callback);
 }
@@ -1585,7 +1636,8 @@ void HAN_resetNVM(void) {
 }
 
 /*******************************************************************************
- * 'Meter' command class from here on down
+ * 'Meter' command class from here on down. The implementation is too closely-
+ * tied to the AMS2ZWAVE application to warrant pulling out to a generic CC.
  ******************************************************************************/
 /**
  * Struct used to pass operational data to TSE module

@@ -75,7 +75,7 @@
                                 								
                                 <option id="com.silabs.ide.si32.gcc.cdt.managedbuild.tool.gnu.c.compiler.optimization.level.1791697952" name="Optimization Level" superClass="com.silabs.ide.si32.gcc.cdt.managedbuild.tool.gnu.c.compiler.optimization.level" value="gnu.c.optimization.level.none" valueType="enumerated"/>
                                 								
-                                <option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.silabs.ide.si32.gcc.cdt.managedbuild.tool.gnu.c.compiler.def.symbols.555958561" name="Defined symbols (-D)" superClass="com.silabs.ide.si32.gcc.cdt.managedbuild.tool.gnu.c.compiler.def.symbols" valueType="definedSymbols">
+                                <option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.silabs.ide.si32.gcc.cdt.managedbuild.tool.gnu.c.compiler.def.symbols.555958561" name="Defined symbols (-D)" superClass="com.silabs.ide.si32.gcc.cdt.managedbuild.tool.gnu.c.compiler.def.symbols" useByScannerDiscovery="false" valueType="definedSymbols">
                                     									
                                     <listOptionValue builtIn="false" value="ZGM130S037HGN=1"/>
                                     									
@@ -88,8 +88,6 @@
                                     <listOptionValue builtIn="false" value="RADIO_BOARD_ZGM130S=1"/>
                                     									
                                     <listOptionValue builtIn="false" value="EXT_BOARD_8029A=1"/>
-                                    									
-                                    <listOptionValue builtIn="false" value="DISABLE_USART1=1"/>
                                     									
                                     <listOptionValue builtIn="false" value="DEBUG=1"/>
                                     									
@@ -489,11 +487,7 @@
                                     									
                                     <listOptionValue builtIn="false" value="EXT_BOARD_8029A=1"/>
                                     									
-                                    <listOptionValue builtIn="false" value="DISABLE_USART1=1"/>
-                                    									
-                                    <listOptionValue builtIn="false" value="NDEBUG=1"/>
-                                    									
-                                    <listOptionValue builtIn="false" value="NO_DEBUGPRINT=1"/>
+                                    <listOptionValue builtIn="false" value="DEBUG=1"/>
                                     									
                                     <listOptionValue builtIn="false" value="ZAF_BUILD_NO=0xAABB"/>
                                     									
