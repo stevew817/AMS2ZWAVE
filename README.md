@@ -128,7 +128,17 @@ To build the firmware:
 2. Install the Z-Wave SDK inside Simplicity Studio (project was created with Z-Wave SDK 7.15.x)
 3. Import this repository (including submodules) as a project into Simplicity Studio
 4. Build
-5. Run or debug on target from within Simplicity Studio using a supprted debug probe (J-Link)
+
+To fully flash a blank device:
+1. Flash the bootloader (`bin/AMS2ZWAVE-btl-combined.s37`) to the device
+    * This is the same bootloader as the SDK-provided one, except it allows firmware downgrading and sidegrading.
+2. Flash the sign & encrypt keys to the device, following [step 7 in this guide](https://www.silabs.com/community/wireless/z-wave/knowledge-base.entry.html/2019/04/09/z-wave_700_ota_ofe-i00M)
+    * This repository is set up to generate .gbl files using the 'default' keys in the SDK, so you don't have to generate your own
+    * For the default keys, flash these files using commander with the --tokenfile argument:
+        * `${StudioSdkPath}/protocol/z-wave/BootLoader/sample-keys/sample_encrypt.key`
+        * `${StudioSdkPath}/protocol/z-wave/BootLoader/sample-keys/sample_sign.key-tokens.txt`
+3. Flash the application like you normally would
+4. Verify debug output to check the device is working and responsive
 
 ## Z-Wave operation
 Device only has a single association group, which is the lifeline group. It will report meter updates unsolicited to the node registered to the lifeline group.
