@@ -129,6 +129,11 @@
 			<locationURI>STUDIO_SDK_LOC/protocol/z-wave/ZAF/ApplicationUtilities/EventHandling/zaf_job_helper.c</locationURI>
 		</link>
 		<link>
+			<name>ZAF_ApplicationUtilities_PowerManagement/ZAF_PM_Wrapper.h</name>
+			<type>1</type>
+			<locationURI>STUDIO_SDK_LOC/protocol/z-wave/ZAF/ApplicationUtilities/PowerManagement/ZAF_PM_Wrapper.h</locationURI>
+		</link>
+		<link>
 			<name>ZAF_ApplicationUtilities_TrueStatusEngine/ZAF_TSE.c</name>
 			<type>1</type>
 			<locationURI>STUDIO_SDK_LOC/protocol/z-wave/ZAF/ApplicationUtilities/TrueStatusEngine/ZAF_TSE.c</locationURI>
@@ -137,6 +142,16 @@
 			<name>ZAF_ApplicationUtilities_TrueStatusEngine/ZAF_TSE.h</name>
 			<type>1</type>
 			<locationURI>STUDIO_SDK_LOC/protocol/z-wave/ZAF/ApplicationUtilities/TrueStatusEngine/ZAF_TSE.h</locationURI>
+		</link>
+		<link>
+			<name>ZAF_ApplicationUtilities_commonIF/ZAF_Common_helper.h</name>
+			<type>1</type>
+			<locationURI>STUDIO_SDK_LOC/protocol/z-wave/ZAF/ApplicationUtilities/_commonIF/ZAF_Common_helper.h</locationURI>
+		</link>
+		<link>
+			<name>ZAF_ApplicationUtilities_commonIF/ZAF_Common_interface.h</name>
+			<type>1</type>
+			<locationURI>STUDIO_SDK_LOC/protocol/z-wave/ZAF/ApplicationUtilities/_commonIF/ZAF_Common_interface.h</locationURI>
 		</link>
 		<link>
 			<name>ZAF_CommandClasses_Association/CC_Association.c</name>
@@ -237,6 +252,11 @@
 			<name>ZAF_CommandClasses_Supervision/CC_Supervision.c</name>
 			<type>1</type>
 			<locationURI>STUDIO_SDK_LOC/protocol/z-wave/ZAF/CommandClasses/Supervision/CC_Supervision.c</locationURI>
+		</link>
+		<link>
+			<name>ZAF_CommandClasses_Version/CC_Version.h</name>
+			<type>1</type>
+			<locationURI>STUDIO_SDK_LOC/protocol/z-wave/ZAF/CommandClasses/Version/CC_Version.h</locationURI>
 		</link>
 		<link>
 			<name>ZAF_CommandClasses_ZWavePlusInfo/CC_ZWavePlusInfo.c</name>

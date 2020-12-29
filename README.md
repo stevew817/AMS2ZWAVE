@@ -101,7 +101,7 @@ from inside the IDE, though.
 
 The button and activity LED are routed to the same pins as in the Z-Wave SDK's reference applications.
 
-The HAN signal is routed to the Z-Wave SDK's reference application 'USART 1' RX pin. It's a 2400 baud 8-N-1 signal.
+The HAN signal is routed to the Z-Wave SDK's reference application 'USART 1' RX pin. It's a 2400 baud 8-N-1 or 8-E-1 signal.
 
 # Software
 The software is an adaptation of the ['Gesture Wall Controller' Z-Wave sample app](https://github.com/SiliconLabs/z_wave_applications/tree/master/z_wave_gesture_sensor_wall_controller_application).
@@ -119,7 +119,9 @@ Changes include:
     * The Configuration CC should be easily usable by other projects as well, as it was written generically.
 
 Todo:
-* Add separate endpoints for getting phase-specific values on three-phase meters (root endpoint reports total values).
+* Add separate endpoints for getting phase-specific values on three-phase meters (root endpoint currently reports L1 values for voltage and current).
+* Add support for reporting both active and reactive power / energy
+* Add support for reporting export direction
 
 To build the firmware:
 1. Download and install Simplicity Studio
@@ -130,7 +132,9 @@ To build the firmware:
 
 ## Z-Wave operation
 Device only has a single association group, which is the lifeline group. It will report meter updates unsolicited to the node registered to the lifeline group.
-Frequent updates report power draw, whilst the accumulated meter reading is only reported once an hour (see the HAN standard from NEK).
+Frequent updates report power draw, whilst the accumulated meter reading is only reported once an hour (see the HAN standard from NEK). This is a limitation of the HAN standard.
+
+The node could theoretically average the reported power draw in-between getting the accumulated meter reading reports, but since some meters only report power for the last second every 10s, that opens up a possibility of averaging higher than actual, and thus 'overestimating' the meter reading within the hour. That would mean the reported accumulated value could potentially go backwards once an hour, and it's not a given that various systems will be able to cope with that.
 
 The controller can ask ('poll') for other values (like voltage and current), but there is currently no support for reporting these automatically.
 I consider the use case for grabbing these values fairly narrow, since line voltage shouldn't deviate from 230V too much, and you can calculate backwards from

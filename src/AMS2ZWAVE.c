@@ -617,6 +617,22 @@ static void EventQueueInit()
   ZAF_JobHelperInit();
 }
 
+static void printDSK(void)
+{
+  // address taken from https://www.silabs.com/community/wireless/z-wave/knowledge-base.entry.html/2019/01/04/z-wave_700_how_tor-RQy8
+  uint8_t* dskptr = (uint8_t*)0x0FE043CCUL;
+
+  DPRINT("DSK: \n");
+  for(size_t i = 0; i < 16; i+=2) {
+    uint16_t element = dskptr[i] << 8 | dskptr[i+1];
+    DPRINTF("    %05u", element);
+    if(i < 14) {
+      DPRINT("-\n");
+    }
+  }
+  DPRINT("\n");
+}
+
 /**
  * @brief See description for function prototype in ZW_basis_api.h.
  */
@@ -651,10 +667,11 @@ ApplicationInit(EResetReason_t eResetReason)
           ZAF_GetAppVersionPatchLevel(),
           ZAF_BUILD_NO,
           RadioConfig.eRegion);
+  printDSK();
   DPRINT("--------------------------------\n");
   DPRINTF("%s: Toggle learn mode\n", Board_GetButtonLabel(APP_BUTTON_LEARN_RESET));
   DPRINT("      Hold 5 sec: Reset\n");
-  DPRINTF("%s: Learn mode + identify\n", Board_GetLedLabel(APP_LED_INDICATOR));
+  DPRINTF("%s: Learn mode + identify + activity\n", Board_GetLedLabel(APP_LED_INDICATOR));
   DPRINT("--------------------------------\n\n");
 
   DPRINTF("ApplicationInit eResetReason = %d\n", g_eResetReason);
@@ -1488,6 +1505,24 @@ void HAN_callback(const han_parser_data_t* decoded_data) {
 void HAN_setup(void)
 {
   // Turn on uart1 for HAN input @ 2400 baud
+
+  // It appears there's both 8-N-1 and 8-E-1 formats in use by the various meters
+  // on the Norwegian market. To be able to receive data from both of them, we
+  // configure the UART to 8-N-1 (which is the default anyway).
+  // That way, the UART will receive the first 9 bits (and we'll drop the 9th).
+  // 8-N-1 = start | b0 | b1 | b2 | b3 | b4 | b5 | b6 | b7 | stop |
+  // 8-E-1 = start | b0 | b1 | b2 | b3 | b4 | b5 | b6 | b7 | epar | stop |
+  //
+  // The 'extra' parity bit when the meter is sending 8-E-1 will thus either get
+  // received correctly (if the parity bit is the same state as the stop bit),
+  // or the USART will generate a framing error because of stop bit mismatch.
+  // Lucky for us, the EFR32 USART still puts the received bits in the RX FIFO
+  // even when a framing error occurs. So we can just keep receiving our data
+  // and disregard the FERR flag.
+  // The downside of this solution is that we don't check parity on the serial
+  // bus level, but to compensate, we have two CRC-16 checks on the HDLC level
+  // just above. So we can be sure that no corrupted packet gets through to the
+  // parser output.
   ZAF_UART1_enable(2400, false, true);
 
   // Turn on GPCRC for HAN parser
