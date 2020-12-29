@@ -117,6 +117,8 @@
 #include "readings.h"
 #include "em_usart.h"
 
+#include "CC_Configuration.h"
+
 /*********************** AMS2ZWAVE function prototypes ************************/
 void HAN_callback(const han_parser_data_t* decoded_data);
 void HAN_serial_rx();
@@ -338,18 +340,6 @@ static const EventDistributorEventHandler g_aEventHandlerTable[] =
   HAN_serial_rx,
 };
 
-// Used by the application data file.
-typedef struct SApplicationData
-{
-  uint8_t amount_of_10s_reports_for_meter_report;
-  uint8_t power_change_for_meter_report;
-  uint8_t turn_off_hourly_report;
-} SApplicationData;
-
-#define FILE_SIZE_APPLICATIONDATA     (sizeof(SApplicationData))
-
-static SApplicationData ApplicationData;
-
 #define APP_EVENT_QUEUE_SIZE 5
 
 /**
@@ -405,10 +395,6 @@ static void ApplicationTask(SApplicationHandles* pAppHandles);
 
 bool LoadConfiguration(void);
 void SetDefaultConfiguration(void);
-
-SApplicationData readAppData(void);
-void writeAppData(const SApplicationData* pAppData);
-void resetAppData(SApplicationData* pAppData);
 
 void AppResetNvm(void);
 
@@ -935,8 +921,8 @@ AppStateManager(EVENT_APP event)
       if (EVENT_APP_POWER_UPDATE_FAST == event ||
           EVENT_APP_POWER_UPDATE_SLOW == event ||
           EVENT_APP_ENERGY_UPDATE == event) {
-        if( ApplicationData.power_change_for_meter_report > 0 ) {
-          uint32_t watt_trigger = ApplicationData.power_change_for_meter_report * 100;
+        if( CC_ConfigurationData.power_change_for_meter_report > 0 ) {
+          uint32_t watt_trigger = CC_ConfigurationData.power_change_for_meter_report * 100;
           if( active_power_watt > last_reported_power_watt + watt_trigger ||
               ((last_reported_power_watt >= watt_trigger) && (active_power_watt < last_reported_power_watt - watt_trigger)) ) {
             send_power_report = true;
@@ -951,9 +937,9 @@ AppStateManager(EVENT_APP event)
         // throughput of a z-wave network, reporting every 30s is more than
         // plenty (and maybe still unwanted).
         static uint8_t iterations = 0;
-        if(ApplicationData.amount_of_10s_reports_for_meter_report > 0) {
+        if(CC_ConfigurationData.amount_of_10s_reports_for_meter_report > 0) {
           iterations++;
-          if(iterations >= ApplicationData.amount_of_10s_reports_for_meter_report) {
+          if(iterations >= CC_ConfigurationData.amount_of_10s_reports_for_meter_report) {
               send_power_report = true;
               iterations = 0;
           }
@@ -962,7 +948,7 @@ AppStateManager(EVENT_APP event)
 
       // ACTION: report on hourly update
       if (EVENT_APP_ENERGY_UPDATE == event) {
-        if(ApplicationData.turn_off_hourly_report == 0) {
+        if(CC_ConfigurationData.turn_off_hourly_report == 0) {
           CC_Meter_update_energy();
         }
       }
@@ -1134,16 +1120,7 @@ SetDefaultConfiguration(void)
 {
   AssociationInit(true, pFileSystemApplication);
 
-  // Report at least every 30 seconds
-  ApplicationData.amount_of_10s_reports_for_meter_report = 3;
-
-  // Report on power level change > 0.5kW from last reported value
-  ApplicationData.power_change_for_meter_report = 5;
-
-  // Report hourly updates by default
-  ApplicationData.turn_off_hourly_report = 0;
-
-  writeAppData(&ApplicationData);
+  CC_Configuration_resetToDefault(pFileSystemApplication);
 
   // Reset persistent meter values
   HAN_resetNVM();
@@ -1176,7 +1153,7 @@ LoadConfiguration(void)
       // Add code for migration of file system to higher version here.
     }
 
-    ApplicationData = readAppData();
+    CC_Configuration_loadFromNVM(pFileSystemApplication);
 
     /* Initialize association module */
     AssociationInit(false, pFileSystemApplication);
@@ -1214,51 +1191,7 @@ void AppResetNvm(void)
 
 // AMS2ZWAVE: stripped all of the scene controller functionality from the sample app
 
-/**
- * @brief Reads application data from file system.
- */
-SApplicationData
-readAppData(void)
-{
-  SApplicationData AppData;
-  Ecode_t errCode = nvm3_readData(pFileSystemApplication, FILE_ID_APPLICATIONDATA, &AppData, sizeof(SApplicationData));
-
-  // Reset to default if the data got corrupted or not migrated properly
-  if(errCode == ECODE_NVM3_ERR_KEY_NOT_FOUND ||
-     errCode == ECODE_NVM3_ERR_READ_DATA_SIZE) {
-    resetAppData(&AppData);
-  } else {
-    DPRINTF("Error code %d\n", errCode);
-    ASSERT(ECODE_NVM3_OK == errCode); //Assert has been kept for debugging , can be removed from production code. This error hard to occur when a corresponing write is successfull
-                                      //Can only happended in case of some hardware failure
-  }
-
-  return AppData;
-}
-
-/**
- * @brief Writes application data to file system.
- */
-void writeAppData(const SApplicationData* pAppData)
-{
-  Ecode_t errCode = nvm3_writeData(pFileSystemApplication, FILE_ID_APPLICATIONDATA, pAppData, sizeof(SApplicationData));
-  ASSERT(ECODE_NVM3_OK == errCode); //Assert has been kept for debugging , can be removed from production code. This error can only be caused by some internal flash HW failure
-}
-
-void resetAppData(SApplicationData* pAppData) {
-  // MAKE SURE THESE VALUES ARE CONSISTENT WITH parameter_table!
-
-  // Report at least every 30 seconds
-  pAppData->amount_of_10s_reports_for_meter_report = 3;
-
-  // Report on power level change > 0.5kW from last reported value
-  pAppData->power_change_for_meter_report = 5;
-
-  // Report hourly updates by default
-  pAppData->turn_off_hourly_report = 0;
-
-  writeAppData(pAppData);
-}
+// AMS2ZWAVE: stripped out 'ApplicationData' handling in favor of Configuration CC
 
 uint16_t handleFirmWareIdGet(uint8_t n)
 {
@@ -1931,628 +1864,6 @@ void CC_Meter_update_energy(void)
   void * pData = CC_Meter_prepare_zaf_tse_data(&zaf_tse_local_actuation);
   ZAF_TSE_Trigger((void *)CC_Meter_report_energy, pData, true);
 }
-
-/*******************************************************************************
- * Implemented configuration CC for setting parameters below
- ******************************************************************************/
-typedef union {
-  uint8_t u8;
-  uint16_t u16;
-  uint32_t u32;
-} parameter_value_t;
-
-typedef struct {
-  uint8_t param_nbr;  // Configuration parameter number
-  uint8_t param_size; // Amount of bytes in parameter
-  uint8_t* param;     // Memory location where parameter resides
-  const char* param_name;   // User-visible parameter name
-  size_t param_name_size;
-  const char* param_info;   // User-visible parameter info
-  size_t param_info_size;
-  const parameter_value_t param_default;
-  const parameter_value_t param_min;
-  const parameter_value_t param_max;
-  bool read_only;
-} param_desc_t;
-
-#define PARAM_DESC_STR(x) x, sizeof(x) - 1
-#define PARAM_VALUE_U8(x) { .u8 = x }
-#define PARAM_VALUE_U16(x) { .u16 = x }
-#define PARAM_VALUE_U32(x) { .u32 = x }
-
-// MAKE SURE THE DEFAULTS ARE CONSISTENT WITH resetAppData!
-static const param_desc_t parameter_table[] = {
-    {
-        1,
-        sizeof(ApplicationData.amount_of_10s_reports_for_meter_report),
-        &ApplicationData.amount_of_10s_reports_for_meter_report,
-        PARAM_DESC_STR("Time interval for reporting power consumption"),
-        PARAM_DESC_STR("How often to report power consumption to lifeline group, in 10s intervals. 0 = no time-based power reporting."),
-        PARAM_VALUE_U8(3),
-        PARAM_VALUE_U8(0),
-        PARAM_VALUE_U8(255),
-        false
-    },
-    {
-        2,
-        sizeof(ApplicationData.power_change_for_meter_report),
-        &ApplicationData.power_change_for_meter_report,
-        PARAM_DESC_STR("Change-based power consumption reporting"),
-        PARAM_DESC_STR("When to report power consumption to lifeline group, based on change in 100W increments since the last report. 0 = no change-based power reporting."),
-        PARAM_VALUE_U8(5),
-        PARAM_VALUE_U8(0),
-        PARAM_VALUE_U8(255),
-        false
-    },
-    {
-        3,
-        sizeof(ApplicationData.turn_off_hourly_report),
-        &ApplicationData.turn_off_hourly_report,
-        PARAM_DESC_STR("Enable accumulated energy consumption reporting"),
-        PARAM_DESC_STR("Whether to enable sending hourly accumulated energy consumption reports to lifeline group. 0 = enabled, 1 = disabled."),
-        PARAM_VALUE_U8(0),
-        PARAM_VALUE_U8(0),
-        PARAM_VALUE_U8(1),
-        false
-    },
-};
-
-static const char unassigned_param[] = "Unassigned parameter";
-
-static const size_t max_chars_per_report = 40; // todo: figure out the actual max size..
-
-typedef struct {
-  bool in_progress;
-  TRANSMIT_OPTIONS_TYPE_SINGLE_EX pkg_options;
-  uint8_t command;
-  uint8_t param_nbr;
-  uint8_t num_packets_remaining;
-  const char* string;
-  size_t string_length;
-  size_t offset;
-} string_package_in_progress_t;
-
-static string_package_in_progress_t string_package_in_progress = {
-  false,
-};
-
-void string_package_progress_cb(uint8_t status)
-{
-  ZAF_TRANSPORT_TX_BUFFER  TxBuf;
-  ZW_APPLICATION_TX_BUFFER *pTxBuf = &(TxBuf.appTxBuf);
-  memset((uint8_t*)pTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
-
-  pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.cmdClass = COMMAND_CLASS_CONFIGURATION;
-  pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.cmd = string_package_in_progress.command;
-  pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.parameterNumber1 = 0;
-  pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.parameterNumber2 = string_package_in_progress.param_nbr;
-  pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.reportsToFollow = string_package_in_progress.num_packets_remaining;
-
-  size_t report_size;
-  if(string_package_in_progress.num_packets_remaining > 0) {
-    report_size = max_chars_per_report + 5;
-  } else {
-    report_size = string_package_in_progress.string_length - string_package_in_progress.offset + 5;
-  }
-
-  memcpy(&pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.name1, &string_package_in_progress.string[string_package_in_progress.offset], report_size - 5);
-
-  if(string_package_in_progress.num_packets_remaining > 0) {
-    if(EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
-        (uint8_t *)pTxBuf,
-        report_size,
-        &string_package_in_progress.pkg_options,
-        string_package_progress_cb))
-    {
-      ;
-    }
-
-    string_package_in_progress.num_packets_remaining--;
-    string_package_in_progress.offset += report_size - 5;
-
-  } else {
-    if(EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
-        (uint8_t *)pTxBuf,
-        report_size,
-        &string_package_in_progress.pkg_options,
-        NULL))
-    {
-      ;
-    }
-
-    string_package_in_progress.in_progress = false;
-  }
-}
-
-received_frame_status_t
-handleCommandClassConfiguration(
-  RECEIVE_OPTIONS_TYPE_EX *rxOpt,
-  ZW_APPLICATION_TX_BUFFER *pCmd,
-  uint8_t cmdLength)
-{
-  switch (pCmd->ZW_Common.cmd)
-  {
-    case CONFIGURATION_GET_V4:
-      if(false == Check_not_legal_response_job(rxOpt))
-      {
-        ZAF_TRANSPORT_TX_BUFFER  TxBuf;
-        ZW_APPLICATION_TX_BUFFER *pTxBuf = &(TxBuf.appTxBuf);
-        memset((uint8_t*)pTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
-
-        TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
-        RxToTxOptions(rxOpt, &pTxOptionsEx);
-
-        uint8_t param_nbr = pCmd->ZW_ConfigurationGetV4Frame.parameterNumber;
-        const param_desc_t* param_descr = NULL;
-        for(size_t i = 0; i < sizeof(parameter_table) / sizeof(parameter_table[0]); i++) {
-            if(parameter_table[i].param_nbr == param_nbr) {
-                param_descr = &parameter_table[i];
-                break;
-            }
-        }
-
-        if(param_descr == NULL) {
-            return RECEIVED_FRAME_STATUS_NO_SUPPORT;
-        }
-
-        pTxBuf->ZW_ConfigurationReport1byteV4Frame.cmdClass = COMMAND_CLASS_CONFIGURATION;
-        pTxBuf->ZW_ConfigurationReport1byteV4Frame.cmd = CONFIGURATION_REPORT;
-        pTxBuf->ZW_ConfigurationReport1byteV4Frame.parameterNumber = param_nbr;
-        pTxBuf->ZW_ConfigurationReport1byteV4Frame.level = param_descr->param_size;
-
-        size_t frame_size;
-        uint32_t value;
-        switch(param_descr->param_size) {
-          case 1:
-            pTxBuf->ZW_ConfigurationReport1byteV4Frame.configurationValue1 = *(param_descr->param);
-            frame_size = sizeof(pTxBuf->ZW_ConfigurationReport1byteV4Frame);
-            break;
-          case 2:
-            value = *((uint16_t*)(param_descr->param));
-            pTxBuf->ZW_ConfigurationReport2byteV4Frame.configurationValue1 = (value >> 8) & 0xFF;
-            pTxBuf->ZW_ConfigurationReport2byteV4Frame.configurationValue2 = (value & 0xFF);
-            frame_size = sizeof(pTxBuf->ZW_ConfigurationReport2byteV4Frame);
-            break;
-          case 4:
-            value = *((uint32_t*)(param_descr->param));
-            pTxBuf->ZW_ConfigurationReport4byteV4Frame.configurationValue1 = (value >> 24) & 0xFF;
-            pTxBuf->ZW_ConfigurationReport4byteV4Frame.configurationValue2 = (value >> 16) & 0xFF;
-            pTxBuf->ZW_ConfigurationReport4byteV4Frame.configurationValue3 = (value >> 8) & 0xFF;
-            pTxBuf->ZW_ConfigurationReport4byteV4Frame.configurationValue4 = value & 0xFF;
-            frame_size = sizeof(pTxBuf->ZW_ConfigurationReport4byteV4Frame);
-            break;
-          default:
-            return RECEIVED_FRAME_STATUS_FAIL;
-        }
-
-        if(EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
-            (uint8_t *)pTxBuf,
-            frame_size,
-            pTxOptionsEx,
-            NULL))
-        {
-          /*Job failed */
-          ;
-        }
-        return RECEIVED_FRAME_STATUS_SUCCESS;
-      }
-      return RECEIVED_FRAME_STATUS_FAIL;
-
-    case CONFIGURATION_SET_V4:
-      if(false == Check_not_legal_response_job(rxOpt))
-      {
-        // Command does not require sending back a report, we just need to apply
-        // the new value.
-        uint8_t param_nbr = pCmd->ZW_ConfigurationSet1byteV4Frame.parameterNumber;
-        uint8_t size = pCmd->ZW_ConfigurationSet1byteV4Frame.level & 0x7;
-        uint8_t set_default = pCmd->ZW_ConfigurationSet1byteV4Frame.level >> 7;
-
-        const param_desc_t* param_descr = NULL;
-        for(size_t i = 0; i < sizeof(parameter_table) / sizeof(parameter_table[0]); i++) {
-            if(parameter_table[i].param_nbr == param_nbr && parameter_table[i].param_size == size) {
-                param_descr = &parameter_table[i];
-                break;
-            }
-        }
-
-        // Ignore unknown parameters or non-matching size
-        if(param_descr == NULL) {
-            return RECEIVED_FRAME_STATUS_NO_SUPPORT;
-        }
-
-        // Ignore read-only parameters
-        if(param_descr->read_only) {
-            return RECEIVED_FRAME_STATUS_NO_SUPPORT;
-        }
-
-        uint32_t value;
-        switch(param_descr->param_size) {
-          case 1:
-            value = pCmd->ZW_ConfigurationSet1byteV4Frame.configurationValue1;
-            if(set_default) {
-                value = param_descr->param_default.u8;
-            }
-            *(param_descr->param) = value;
-            break;
-          case 2:
-            value = pCmd->ZW_ConfigurationSet2byteV4Frame.configurationValue1 << 8;
-            value |= pCmd->ZW_ConfigurationSet2byteV4Frame.configurationValue2;
-            if(set_default) {
-                value = param_descr->param_default.u16;
-            }
-            *((uint16_t*)param_descr->param) = value;
-            break;
-          case 4:
-            value = pCmd->ZW_ConfigurationSet4byteV4Frame.configurationValue1 << 24;
-            value |= pCmd->ZW_ConfigurationSet4byteV4Frame.configurationValue2 << 16;
-            value |= pCmd->ZW_ConfigurationSet4byteV4Frame.configurationValue3 << 8;
-            value |= pCmd->ZW_ConfigurationSet4byteV4Frame.configurationValue4;
-
-            if(set_default) {
-                value = param_descr->param_default.u32;
-            }
-            *((uint32_t*)param_descr->param) = value;
-            break;
-          default:
-            return RECEIVED_FRAME_STATUS_FAIL;
-        }
-
-        // Write out application data
-        writeAppData(&ApplicationData);
-
-        return RECEIVED_FRAME_STATUS_SUCCESS;
-      }
-      return RECEIVED_FRAME_STATUS_FAIL;
-
-    case CONFIGURATION_NAME_GET_V4:
-      if(false == Check_not_legal_response_job(rxOpt))
-      {
-        ZAF_TRANSPORT_TX_BUFFER  TxBuf;
-        ZW_APPLICATION_TX_BUFFER *pTxBuf = &(TxBuf.appTxBuf);
-        memset((uint8_t*)pTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
-
-        TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
-        RxToTxOptions(rxOpt, &pTxOptionsEx);
-
-        // No support for parameters > 255 yet
-        if(pCmd->ZW_ConfigurationNameGetV4Frame.parameterNumber1 != 0) {
-          return RECEIVED_FRAME_STATUS_NO_SUPPORT;
-        }
-
-        uint8_t param_nbr = pCmd->ZW_ConfigurationNameGetV4Frame.parameterNumber2;
-        const param_desc_t* param_descr = NULL;
-        for(size_t i = 0; i < sizeof(parameter_table) / sizeof(parameter_table[0]); i++) {
-          if(parameter_table[i].param_nbr == param_nbr) {
-            param_descr = &parameter_table[i];
-            break;
-          }
-        }
-
-        const char* param_info;
-        size_t param_info_length;
-
-        if(param_descr == NULL) {
-          param_info = unassigned_param;
-          param_info_length = sizeof(unassigned_param) - 1;
-        } else {
-          param_info = param_descr->param_name;
-          param_info_length = param_descr->param_name_size;
-        }
-
-        pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.cmdClass = COMMAND_CLASS_CONFIGURATION;
-        pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.cmd = CONFIGURATION_NAME_REPORT_V4;
-        pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.parameterNumber1 = 0;
-        pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.parameterNumber2 = param_nbr;
-
-        pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.reportsToFollow = param_info_length / max_chars_per_report;
-        if(param_info_length * max_chars_per_report < param_info_length) {
-          pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.reportsToFollow++;
-        }
-
-        if(param_info_length > max_chars_per_report) {
-          if(string_package_in_progress.in_progress) {
-            return RECEIVED_FRAME_STATUS_FAIL;
-          }
-
-          memcpy(&pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.name1, param_info, max_chars_per_report);
-
-          // Set up string package callback
-          string_package_in_progress.in_progress = true;
-          memcpy(&string_package_in_progress.pkg_options, pTxOptionsEx, sizeof(TRANSMIT_OPTIONS_TYPE_SINGLE_EX));
-          string_package_in_progress.command = CONFIGURATION_NAME_REPORT_V4;
-          string_package_in_progress.param_nbr = param_nbr;
-          string_package_in_progress.num_packets_remaining = pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.reportsToFollow - 1;
-          string_package_in_progress.string = param_info;
-          string_package_in_progress.string_length = param_info_length;
-          string_package_in_progress.offset = max_chars_per_report;
-
-          if(EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
-              (uint8_t *)pTxBuf,
-              max_chars_per_report + 5,
-              pTxOptionsEx,
-              string_package_progress_cb))
-          {
-            /*Job failed */
-            ;
-          }
-        } else {
-          memcpy(&pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.name1, param_info, param_info_length);
-
-          if(EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
-              (uint8_t *)pTxBuf,
-              param_info_length + 5,
-              pTxOptionsEx,
-              NULL))
-          {
-            /*Job failed */
-            ;
-          }
-        }
-
-        return RECEIVED_FRAME_STATUS_SUCCESS;
-      }
-      return RECEIVED_FRAME_STATUS_FAIL;
-
-    case CONFIGURATION_INFO_GET_V4:
-      if(false == Check_not_legal_response_job(rxOpt))
-      {
-        ZAF_TRANSPORT_TX_BUFFER  TxBuf;
-        ZW_APPLICATION_TX_BUFFER *pTxBuf = &(TxBuf.appTxBuf);
-        memset((uint8_t*)pTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
-
-        TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
-        RxToTxOptions(rxOpt, &pTxOptionsEx);
-
-        // No support for parameters > 255 yet
-        if(pCmd->ZW_ConfigurationInfoGetV4Frame.parameterNumber1 != 0) {
-          return RECEIVED_FRAME_STATUS_NO_SUPPORT;
-        }
-
-        uint8_t param_nbr = pCmd->ZW_ConfigurationInfoGetV4Frame.parameterNumber2;
-        const param_desc_t* param_descr = NULL;
-        for(size_t i = 0; i < sizeof(parameter_table) / sizeof(parameter_table[0]); i++) {
-          if(parameter_table[i].param_nbr == param_nbr) {
-            param_descr = &parameter_table[i];
-            break;
-          }
-        }
-
-        const char* param_info;
-        size_t param_info_length;
-
-        if(param_descr == NULL) {
-          param_info = unassigned_param;
-          param_info_length = sizeof(unassigned_param) - 1;
-        } else {
-          param_info = param_descr->param_info;
-          param_info_length = param_descr->param_info_size;
-        }
-
-        pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.cmdClass = COMMAND_CLASS_CONFIGURATION;
-        pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.cmd = CONFIGURATION_INFO_REPORT_V4;
-        pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.parameterNumber1 = 0;
-        pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.parameterNumber2 = param_nbr;
-
-        pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.reportsToFollow = param_info_length / max_chars_per_report;
-        if(param_info_length * max_chars_per_report < param_info_length) {
-          pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.reportsToFollow++;
-        }
-
-        if(param_info_length > max_chars_per_report) {
-          if(string_package_in_progress.in_progress) {
-            return RECEIVED_FRAME_STATUS_FAIL;
-          }
-
-          memcpy(&pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.info1, param_info, max_chars_per_report);
-
-          // Set up string package callback
-          string_package_in_progress.in_progress = true;
-          memcpy(&string_package_in_progress.pkg_options, pTxOptionsEx, sizeof(TRANSMIT_OPTIONS_TYPE_SINGLE_EX));
-          string_package_in_progress.command = CONFIGURATION_INFO_REPORT_V4;
-          string_package_in_progress.param_nbr = param_nbr;
-          string_package_in_progress.num_packets_remaining = pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.reportsToFollow - 1;
-          string_package_in_progress.string = param_info;
-          string_package_in_progress.string_length = param_info_length;
-          string_package_in_progress.offset = max_chars_per_report;
-
-          if(EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
-              (uint8_t *)pTxBuf,
-              max_chars_per_report + 5,
-              pTxOptionsEx,
-              string_package_progress_cb))
-          {
-            /*Job failed */
-            ;
-          }
-        } else {
-          memcpy(&pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.info1, param_info, param_info_length);
-
-          if(EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
-              (uint8_t *)pTxBuf,
-              param_info_length + 5,
-              pTxOptionsEx,
-              NULL))
-          {
-            /*Job failed */
-            ;
-          }
-        }
-
-        return RECEIVED_FRAME_STATUS_SUCCESS;
-      }
-      return RECEIVED_FRAME_STATUS_FAIL;
-
-    case CONFIGURATION_PROPERTIES_GET_V4:
-      if(false == Check_not_legal_response_job(rxOpt))
-      {
-        ZAF_TRANSPORT_TX_BUFFER  TxBuf;
-        ZW_APPLICATION_TX_BUFFER *pTxBuf = &(TxBuf.appTxBuf);
-        memset((uint8_t*)pTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
-
-        TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
-        RxToTxOptions(rxOpt, &pTxOptionsEx);
-
-        // No support for parameters > 255 yet
-        if(pCmd->ZW_ConfigurationPropertiesGetV4Frame.parameterNumber1 != 0) {
-          return RECEIVED_FRAME_STATUS_NO_SUPPORT;
-        }
-
-        uint8_t param_nbr = pCmd->ZW_ConfigurationPropertiesGetV4Frame.parameterNumber2;
-        uint8_t next_param_nbr;
-        const param_desc_t* param_descr = NULL;
-        for(size_t i = 0; i < sizeof(parameter_table) / sizeof(parameter_table[0]); i++) {
-          if(parameter_table[i].param_nbr == param_nbr) {
-            param_descr = &parameter_table[i];
-            if(i < (sizeof(parameter_table) / sizeof(parameter_table[0]) - 1)) {
-                next_param_nbr = parameter_table[i+1].param_nbr;
-            } else {
-                // Last parameter
-                next_param_nbr = 0;
-            }
-            break;
-          }
-        }
-
-        pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.cmdClass = COMMAND_CLASS_CONFIGURATION;
-        pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.cmd = CONFIGURATION_PROPERTIES_REPORT_V4;
-        pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.parameterNumber1 = 0;
-        pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.parameterNumber2 = param_nbr;
-
-        // Handle undefined parameter case first
-        if(param_descr == NULL) {
-            pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.properties1 = 0;
-            pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.minValue1 = 0; //actually next parameter number 1 due to declaring size = 0
-            pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.maxValue1 = parameter_table[0].param_nbr; //actually next parameter number 2 due to declaring size = 0
-            pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.defaultValue1 = 0x2; // Actually properties2 due to declaring size = 0, set no bulk support bit
-
-            if(EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
-                (uint8_t *)pTxBuf,
-                8,
-                pTxOptionsEx,
-                NULL))
-            {
-              /*Job failed */
-              ;
-            }
-            return RECEIVED_FRAME_STATUS_SUCCESS;
-        }
-
-        size_t response_size;
-
-        // Todo: add support for declaring parameters other than unsigned type
-        // Todo: add support for declaring parameters which alter capabilities
-        // Todo: add support for declaring parameters advanced
-        pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.properties1 = param_descr->param_size | (1 << 3) | (param_descr->read_only ? (1 << 6) : 0);
-        switch(param_descr->param_size) {
-          case 1:
-            pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.minValue1 = param_descr->param_min.u8;
-            pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.maxValue1 = param_descr->param_max.u8;
-            pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.defaultValue1 = param_descr->param_default.u8;
-
-            pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.nextParameterNumber1 = 0;
-            pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.nextParameterNumber2 = next_param_nbr;
-            pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.properties2 = 0x2; // Set no bulk support bit
-            response_size = sizeof(pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame);
-            break;
-          case 2:
-            pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.minValue1 = param_descr->param_min.u16 >> 8;
-            pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.minValue2 = param_descr->param_min.u16 & 0xFF;
-
-            pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.maxValue1 = param_descr->param_max.u16 >> 8;
-            pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.maxValue2 = param_descr->param_max.u16 & 0xFF;
-
-            pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.defaultValue1 = param_descr->param_default.u16 >> 8;
-            pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.defaultValue2 = param_descr->param_default.u16 & 0xFF;
-
-            pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.nextParameterNumber1 = 0;
-            pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.nextParameterNumber2 = next_param_nbr;
-            pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.properties2 = 0x2; // Set no bulk support bit
-            response_size = sizeof(pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame);
-            break;
-          case 4:
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.minValue1 = (param_descr->param_min.u32 >> 24) & 0xFF;
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.minValue2 = (param_descr->param_min.u32 >> 16) & 0xFF;
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.minValue3 = (param_descr->param_min.u32 >> 8) & 0xFF;
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.minValue4 = (param_descr->param_min.u32 >> 0) & 0xFF;
-
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.maxValue1 = (param_descr->param_max.u32 >> 24) & 0xFF;
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.maxValue2 = (param_descr->param_max.u32 >> 16) & 0xFF;
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.maxValue3 = (param_descr->param_max.u32 >> 8) & 0xFF;
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.maxValue4 = (param_descr->param_max.u32 >> 0) & 0xFF;
-
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.defaultValue1 = (param_descr->param_default.u32 >> 24) & 0xFF;
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.defaultValue2 = (param_descr->param_default.u32 >> 16) & 0xFF;
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.defaultValue3 = (param_descr->param_default.u32 >> 8) & 0xFF;
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.defaultValue4 = (param_descr->param_default.u32 >> 0) & 0xFF;
-
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.nextParameterNumber1 = 0;
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.nextParameterNumber2 = next_param_nbr;
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.properties2 = 0x2; // Set no bulk support bit
-            response_size = sizeof(pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame);
-            break;
-          default:
-            return RECEIVED_FRAME_STATUS_FAIL;
-        }
-
-        if(EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
-            (uint8_t *)pTxBuf,
-            response_size,
-            pTxOptionsEx,
-            NULL))
-        {
-          /*Job failed */
-          ;
-        }
-        return RECEIVED_FRAME_STATUS_SUCCESS;
-      }
-      return RECEIVED_FRAME_STATUS_FAIL;
-
-    case CONFIGURATION_DEFAULT_RESET_V4:
-      if(false == Check_not_legal_response_job(rxOpt))
-      {
-        // Command does not require sending back a report, we just need to reset
-        // our settings locally.
-        resetAppData(&ApplicationData);
-        return RECEIVED_FRAME_STATUS_SUCCESS;
-      }
-      return RECEIVED_FRAME_STATUS_FAIL;
-
-    case CONFIGURATION_BULK_GET_V4:
-    case CONFIGURATION_BULK_SET_V4:
-      // SDS13781: we may elect to ignore bulk configuration commands, given we
-      // issue a 'rejected request' command to the originating node, and set the
-      // No Bulk support bit in the properties report.
-      if(false == Check_not_legal_response_job(rxOpt)) {
-        ZAF_TRANSPORT_TX_BUFFER  TxBuf;
-        ZW_APPLICATION_TX_BUFFER *pTxBuf = &(TxBuf.appTxBuf);
-        memset((uint8_t*)pTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
-
-        TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
-        RxToTxOptions(rxOpt, &pTxOptionsEx);
-
-        pTxBuf->ZW_ApplicationRejectedRequestFrame.cmdClass = COMMAND_CLASS_APPLICATION_STATUS;
-        pTxBuf->ZW_ApplicationRejectedRequestFrame.cmd = APPLICATION_REJECTED_REQUEST;
-        pTxBuf->ZW_ApplicationRejectedRequestFrame.status = 0;
-
-        if(EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
-          (uint8_t *)pTxBuf,
-          sizeof(pTxBuf->ZW_ApplicationRejectedRequestFrame),
-          pTxOptionsEx,
-          NULL))
-          {
-            /*Job failed */
-            ;
-          }
-        return RECEIVED_FRAME_STATUS_SUCCESS;
-      }
-      return RECEIVED_FRAME_STATUS_FAIL;
-    default:
-      break;
-  }
-  return RECEIVED_FRAME_STATUS_NO_SUPPORT;
-}
-
-REGISTER_CC(COMMAND_CLASS_CONFIGURATION, CONFIGURATION_VERSION_V4, handleCommandClassConfiguration);
 
 /*******************************************************************************
  * TODO: add support for querying meter GSIN over Z-Wave. This would require
