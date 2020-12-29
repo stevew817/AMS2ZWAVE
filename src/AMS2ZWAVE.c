@@ -120,7 +120,6 @@
 /*********************** AMS2ZWAVE function prototypes ************************/
 void HAN_callback(const han_parser_data_t* decoded_data);
 void HAN_serial_rx();
-void HAN_pkt_rx(void);
 void HAN_setup();
 void HAN_loadFromNVM(void);
 void HAN_storeToNVM(bool update_meter, bool update_accumulated);
@@ -306,8 +305,12 @@ typedef enum EApplicationEvent
   EAPPLICATIONEVENT_TIMER = 0,
   EAPPLICATIONEVENT_ZWRX,
   EAPPLICATIONEVENT_ZWCOMMANDSTATUS,
-  EAPPLICATIONEVENT_SERIALDATARX,
   EAPPLICATIONEVENT_APP,
+  EAPPLICATIONEVENT_SERIALDATARX,   /* Register event for 'USART data available'
+                                     * This will trigger the parser, which in
+                                     * turn will update device state and trigger
+                                     * the appropriate app events on the app
+                                     * queue. */
 } EApplicationEvent;
 
 static void EventHandlerZwRx(void);
@@ -323,8 +326,8 @@ static const EventDistributorEventHandler g_aEventHandlerTable[] =
   AppTimerNotificationHandler,  // Event 0
   EventHandlerZwRx,
   EventHandlerZwCommandStatus,
-  HAN_serial_rx,
   EventHandlerApp,
+  HAN_serial_rx,
 };
 
 // Used by the application data file.
@@ -854,10 +857,6 @@ AppStateManager(EVENT_APP event)
     ChangeState(STATE_APP_RESET);
     /* Send reset notification*/
     DeviceResetLocally();
-  }
-
-  if(event == EVENT_APP_SERIAL_RECV) {
-      HAN_pkt_rx();
   }
 
   switch(currentState)
@@ -1409,19 +1408,11 @@ void HAN_serial_rx(void)
 }
 
 // Business logic goes here!
-static han_parser_data_t parser_data;
 
 // Receive decoded packet from parser and trigger event
 void HAN_callback(const han_parser_data_t* decoded_data) {
-  memcpy(&parser_data, decoded_data, sizeof(parser_data));
-  ZAF_EventHelperEventEnqueue(EVENT_APP_SERIAL_RECV);
-}
-
-void HAN_pkt_rx(void) {
   bool is_list2 = false;
   bool is_list3 = false;
-
-  han_parser_data_t* decoded_data = &parser_data;
 
   if(decoded_data->has_meter_data) {
     if(memcmp(meter_id, decoded_data->meter_gsin, strlen(decoded_data->meter_gsin) + 1) != 0) {
