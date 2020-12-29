@@ -1852,6 +1852,7 @@ handleCommandClassMeter(
     case METER_RESET_V5:
       if(false == Check_not_legal_response_job(rxOpt)) {
         meter_offset = total_meter_reading;
+        HAN_storeToNVM(false, true);
         return RECEIVED_FRAME_STATUS_SUCCESS;
       }
       return RECEIVED_FRAME_STATUS_FAIL;
