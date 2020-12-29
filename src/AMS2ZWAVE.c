@@ -431,8 +431,15 @@ static void EventHandlerZwRx(void)
         break;
       }
 
+      case EZWAVERECEIVETYPE_STAY_AWAKE:
+      {
+        /* Since we're an AOS, we can ignore this seeing we're always awake */
+        break;
+      }
+
     default:
       {
+        DPRINTF("Failed to handle incoming msg with type %d\n", RxPackage.eReceiveType);
         ASSERT(false);
         break;
       }
