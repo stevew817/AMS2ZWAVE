@@ -1727,8 +1727,8 @@ uint8_t set_meter_supported_report_uint32(ZW_APPLICATION_TX_BUFFER *pTxBuf)
 
   pTxBuf->ZW_MeterSupportedReport1byteV5Frame.properties2 = (1 << SCALE_KWH); // support reading KWH
   pTxBuf->ZW_MeterSupportedReport1byteV5Frame.properties2 |= (1 << SCALE_W); // support reading W
-
-  //TODO: add support for polling voltage and current
+  pTxBuf->ZW_MeterSupportedReport1byteV5Frame.properties2 |= (1 << SCALE_V); // support reading V
+  pTxBuf->ZW_MeterSupportedReport1byteV5Frame.properties2 |= (1 << SCALE_A); // support reading A
 
   return 4; // not using extended scales
 }
@@ -1778,6 +1778,28 @@ handleCommandClassMeter(
             if(rate_type == RT_DEFAULT || rate_type == RT_IMPORT) {
               if(list2_recv) {
                 response_size = set_meter_report_uint32(pTxBuf, rate_type, requested_scale, 0, active_power_watt);
+              } else {
+                return RECEIVED_FRAME_STATUS_FAIL;
+              }
+            } else {
+                return RECEIVED_FRAME_STATUS_NO_SUPPORT;
+            }
+            break;
+          case SCALE_A:
+            if(rate_type == RT_DEFAULT || rate_type == RT_IMPORT) {
+              if(list2_recv) {
+                response_size = set_meter_report_uint32(pTxBuf, rate_type, requested_scale, 3, current_l1);
+              } else {
+                return RECEIVED_FRAME_STATUS_FAIL;
+              }
+            } else {
+                return RECEIVED_FRAME_STATUS_NO_SUPPORT;
+            }
+            break;
+          case SCALE_V:
+            if(rate_type == RT_DEFAULT || rate_type == RT_IMPORT) {
+              if(list2_recv) {
+                response_size = set_meter_report_uint32(pTxBuf, rate_type, requested_scale, 0, voltage_l1);
               } else {
                 return RECEIVED_FRAME_STATUS_FAIL;
               }

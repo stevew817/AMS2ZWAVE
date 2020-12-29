@@ -113,9 +113,8 @@ Changes include:
 * Changed device type to 'generic meter'
 * Bogus manufacturer/product ID
 * Implemented a parser for the HAN signal:
-** Uses list identifiers to parse the incoming information. This means a firmware update would be required to support any new meters appearing on the
-Norwegian market. Shouldn't be much of an issue, since the firmware does support OTA updates.
-** Lives in a [separate repository](http://github.com/stevew817/ams-han-parser)
+    * Uses list identifiers to parse the incoming information. This means a firmware update would be required to support any new meters appearing on the Norwegian market. Shouldn't be much of an issue, since the firmware does support OTA updates.
+    * Lives in a [separate repository](http://github.com/stevew817/ams-han-parser)
 * Implemented configuration CC to support changing the reporting frequency
 
 Todo:
