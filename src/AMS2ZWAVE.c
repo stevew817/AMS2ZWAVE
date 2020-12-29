@@ -400,6 +400,7 @@ void SetDefaultConfiguration(void);
 
 SApplicationData readAppData(void);
 void writeAppData(const SApplicationData* pAppData);
+void resetAppData(SApplicationData* pAppData);
 
 void AppResetNvm(void);
 
@@ -1213,16 +1214,7 @@ readAppData(void)
   // Reset to default if the data got corrupted or not migrated properly
   if(errCode == ECODE_NVM3_ERR_KEY_NOT_FOUND ||
      errCode == ECODE_NVM3_ERR_READ_DATA_SIZE) {
-    // Report at least every 30 seconds
-    ApplicationData.amount_of_10s_reports_for_meter_report = 3;
-
-    // Report on power level change > 0.5kW from last reported value
-    ApplicationData.power_change_for_meter_report = 5;
-
-    // Report hourly updates by default
-    ApplicationData.turn_off_hourly_report = 0;
-
-    writeAppData(&ApplicationData);
+    resetAppData(&AppData);
   } else {
     DPRINTF("Error code %d\n", errCode);
     ASSERT(ECODE_NVM3_OK == errCode); //Assert has been kept for debugging , can be removed from production code. This error hard to occur when a corresponing write is successfull
@@ -1239,6 +1231,19 @@ void writeAppData(const SApplicationData* pAppData)
 {
   Ecode_t errCode = nvm3_writeData(pFileSystemApplication, FILE_ID_APPLICATIONDATA, pAppData, sizeof(SApplicationData));
   ASSERT(ECODE_NVM3_OK == errCode); //Assert has been kept for debugging , can be removed from production code. This error can only be caused by some internal flash HW failure
+}
+
+void resetAppData(SApplicationData* pAppData) {
+  // Report at least every 30 seconds
+  pAppData->amount_of_10s_reports_for_meter_report = 3;
+
+  // Report on power level change > 0.5kW from last reported value
+  pAppData->power_change_for_meter_report = 5;
+
+  // Report hourly updates by default
+  pAppData->turn_off_hourly_report = 0;
+
+  writeAppData(pAppData);
 }
 
 uint16_t handleFirmWareIdGet(uint8_t n)
