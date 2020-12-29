@@ -116,9 +116,9 @@ Changes include:
 ** Uses list identifiers to parse the incoming information. This means a firmware update would be required to support any new meters appearing on the
 Norwegian market. Shouldn't be much of an issue, since the firmware does support OTA updates.
 ** Lives in a [separate repository](http://github.com/stevew817/ams-han-parser)
+* Implemented configuration CC to support changing the reporting frequency
 
 Todo:
-* Implement configuration CC to support changing the reporting frequency
 * Add separate endpoints for getting phase-specific values on three-phase meters (root endpoint reports total values).
 
 To build the firmware:

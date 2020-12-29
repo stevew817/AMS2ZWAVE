@@ -1976,6 +1976,71 @@ static const param_desc_t parameter_table[] = {
 
 static const char unassigned_param[] = "Unassigned parameter";
 
+static const size_t max_chars_per_report = 40; // todo: figure out the actual max size..
+
+typedef struct {
+  bool in_progress;
+  TRANSMIT_OPTIONS_TYPE_SINGLE_EX pkg_options;
+  uint8_t command;
+  uint8_t param_nbr;
+  uint8_t num_packets_remaining;
+  const char* string;
+  size_t string_length;
+  size_t offset;
+} string_package_in_progress_t;
+
+static string_package_in_progress_t string_package_in_progress = {
+  false,
+};
+
+void string_package_progress_cb(uint8_t status)
+{
+  ZAF_TRANSPORT_TX_BUFFER  TxBuf;
+  ZW_APPLICATION_TX_BUFFER *pTxBuf = &(TxBuf.appTxBuf);
+  memset((uint8_t*)pTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
+
+  pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.cmdClass = COMMAND_CLASS_CONFIGURATION;
+  pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.cmd = string_package_in_progress.command;
+  pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.parameterNumber1 = 0;
+  pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.parameterNumber2 = string_package_in_progress.param_nbr;
+  pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.reportsToFollow = string_package_in_progress.num_packets_remaining;
+
+  size_t report_size;
+  if(string_package_in_progress.num_packets_remaining > 0) {
+    report_size = max_chars_per_report + 5;
+  } else {
+    report_size = string_package_in_progress.string_length - string_package_in_progress.offset + 5;
+  }
+
+  memcpy(&pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.name1, &string_package_in_progress.string[string_package_in_progress.offset], report_size - 5);
+
+  if(string_package_in_progress.num_packets_remaining > 0) {
+    if(EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
+        (uint8_t *)pTxBuf,
+        report_size,
+        &string_package_in_progress.pkg_options,
+        string_package_progress_cb))
+    {
+      ;
+    }
+
+    string_package_in_progress.num_packets_remaining--;
+    string_package_in_progress.offset += report_size - 5;
+
+  } else {
+    if(EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
+        (uint8_t *)pTxBuf,
+        report_size,
+        &string_package_in_progress.pkg_options,
+        NULL))
+    {
+      ;
+    }
+
+    string_package_in_progress.in_progress = false;
+  }
+}
+
 received_frame_status_t
 handleCommandClassConfiguration(
   RECEIVE_OPTIONS_TYPE_EX *rxOpt,
@@ -2156,30 +2221,43 @@ handleCommandClassConfiguration(
         pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.parameterNumber1 = 0;
         pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.parameterNumber2 = param_nbr;
 
-        const size_t max_chars_per_report = sizeof(ZW_APPLICATION_TX_BUFFER) - 5;
-        size_t sent_chars = 0;
-
         pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.reportsToFollow = param_info_length / max_chars_per_report;
         if(param_info_length * max_chars_per_report < param_info_length) {
           pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.reportsToFollow++;
         }
 
-        while(sent_chars < param_info_length) {
-          size_t remaining_bytes = param_info_length - sent_chars;
-          size_t report_size;
-          if(remaining_bytes > max_chars_per_report) {
-            memcpy(&pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.name1, &param_info[sent_chars], max_chars_per_report);
-            report_size = max_chars_per_report + 5;
-          } else {
-            memcpy(&pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.name1, &param_info[sent_chars], remaining_bytes);
-            report_size = remaining_bytes + 5;
+        if(param_info_length > max_chars_per_report) {
+          if(string_package_in_progress.in_progress) {
+            return RECEIVED_FRAME_STATUS_FAIL;
           }
 
-          sent_chars += report_size - 5;
+          memcpy(&pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.name1, param_info, max_chars_per_report);
+
+          // Set up string package callback
+          string_package_in_progress.in_progress = true;
+          memcpy(&string_package_in_progress.pkg_options, pTxOptionsEx, sizeof(TRANSMIT_OPTIONS_TYPE_SINGLE_EX));
+          string_package_in_progress.command = CONFIGURATION_NAME_REPORT_V4;
+          string_package_in_progress.param_nbr = param_nbr;
+          string_package_in_progress.num_packets_remaining = pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.reportsToFollow - 1;
+          string_package_in_progress.string = param_info;
+          string_package_in_progress.string_length = param_info_length;
+          string_package_in_progress.offset = max_chars_per_report;
 
           if(EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
               (uint8_t *)pTxBuf,
-              report_size,
+              max_chars_per_report + 5,
+              pTxOptionsEx,
+              string_package_progress_cb))
+          {
+            /*Job failed */
+            ;
+          }
+        } else {
+          memcpy(&pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.name1, param_info, param_info_length);
+
+          if(EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
+              (uint8_t *)pTxBuf,
+              param_info_length + 5,
               pTxOptionsEx,
               NULL))
           {
@@ -2232,30 +2310,43 @@ handleCommandClassConfiguration(
         pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.parameterNumber1 = 0;
         pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.parameterNumber2 = param_nbr;
 
-        const size_t max_chars_per_report = sizeof(ZW_APPLICATION_TX_BUFFER) - 5;
-        size_t sent_chars = 0;
-
         pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.reportsToFollow = param_info_length / max_chars_per_report;
         if(param_info_length * max_chars_per_report < param_info_length) {
           pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.reportsToFollow++;
         }
 
-        while(sent_chars < param_info_length) {
-          size_t remaining_bytes = param_info_length - sent_chars;
-          size_t report_size;
-          if(remaining_bytes > max_chars_per_report) {
-            memcpy(&pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.info1, &param_info[sent_chars], max_chars_per_report);
-            report_size = max_chars_per_report + 5;
-          } else {
-            memcpy(&pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.info1, &param_info[sent_chars], remaining_bytes);
-            report_size = remaining_bytes + 5;
+        if(param_info_length > max_chars_per_report) {
+          if(string_package_in_progress.in_progress) {
+            return RECEIVED_FRAME_STATUS_FAIL;
           }
 
-          sent_chars += report_size - 5;
+          memcpy(&pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.info1, param_info, max_chars_per_report);
+
+          // Set up string package callback
+          string_package_in_progress.in_progress = true;
+          memcpy(&string_package_in_progress.pkg_options, pTxOptionsEx, sizeof(TRANSMIT_OPTIONS_TYPE_SINGLE_EX));
+          string_package_in_progress.command = CONFIGURATION_INFO_REPORT_V4;
+          string_package_in_progress.param_nbr = param_nbr;
+          string_package_in_progress.num_packets_remaining = pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.reportsToFollow - 1;
+          string_package_in_progress.string = param_info;
+          string_package_in_progress.string_length = param_info_length;
+          string_package_in_progress.offset = max_chars_per_report;
 
           if(EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
               (uint8_t *)pTxBuf,
-              report_size,
+              max_chars_per_report + 5,
+              pTxOptionsEx,
+              string_package_progress_cb))
+          {
+            /*Job failed */
+            ;
+          }
+        } else {
+          memcpy(&pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.info1, param_info, param_info_length);
+
+          if(EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
+              (uint8_t *)pTxBuf,
+              param_info_length + 5,
               pTxOptionsEx,
               NULL))
           {
@@ -2441,5 +2532,8 @@ handleCommandClassConfiguration(
 REGISTER_CC(COMMAND_CLASS_CONFIGURATION, CONFIGURATION_VERSION_V4, handleCommandClassConfiguration);
 
 /*******************************************************************************
- * TODO: add support for querying meter GSIN over Z-Wave
+ * TODO: add support for querying meter GSIN over Z-Wave. This would require
+ * support for the much more complicated 'meter table' CC, though. And since it
+ * is a much more recent CC, OpenZWave doesn't support it yet, so I can't really
+ * be bothered to implement it here either.
  ******************************************************************************/
