@@ -1792,46 +1792,30 @@ handleCommandClassMeter(
         switch(requested_scale) {
           case SCALE_KWH:
             if((rate_type == RT_DEFAULT || rate_type == RT_IMPORT)) {
-                if(list3_recv) {
-                  response_size = set_meter_report_uint32(pTxBuf, rate_type, requested_scale, 3, total_meter_reading - meter_offset);
-                } else {
-                  return RECEIVED_FRAME_STATUS_FAIL;
-                }
+              response_size = set_meter_report_uint32(pTxBuf, rate_type, requested_scale, 3, total_meter_reading - meter_offset);
             } else {
-                return RECEIVED_FRAME_STATUS_NO_SUPPORT;
+              return RECEIVED_FRAME_STATUS_NO_SUPPORT;
             }
             break;
           case SCALE_W:
             if(rate_type == RT_DEFAULT || rate_type == RT_IMPORT) {
-              if(list2_recv) {
-                response_size = set_meter_report_uint32(pTxBuf, rate_type, requested_scale, 0, active_power_watt);
-              } else {
-                return RECEIVED_FRAME_STATUS_FAIL;
-              }
+              response_size = set_meter_report_uint32(pTxBuf, rate_type, requested_scale, 0, active_power_watt);
             } else {
-                return RECEIVED_FRAME_STATUS_NO_SUPPORT;
+              return RECEIVED_FRAME_STATUS_NO_SUPPORT;
             }
             break;
           case SCALE_A:
             if(rate_type == RT_DEFAULT || rate_type == RT_IMPORT) {
-              if(list2_recv) {
-                response_size = set_meter_report_uint32(pTxBuf, rate_type, requested_scale, 3, current_l1);
-              } else {
-                return RECEIVED_FRAME_STATUS_FAIL;
-              }
+              response_size = set_meter_report_uint32(pTxBuf, rate_type, requested_scale, 3, current_l1);
             } else {
-                return RECEIVED_FRAME_STATUS_NO_SUPPORT;
+              return RECEIVED_FRAME_STATUS_NO_SUPPORT;
             }
             break;
           case SCALE_V:
             if(rate_type == RT_DEFAULT || rate_type == RT_IMPORT) {
-              if(list2_recv) {
-                response_size = set_meter_report_uint32(pTxBuf, rate_type, requested_scale, 0, voltage_l1);
-              } else {
-                return RECEIVED_FRAME_STATUS_FAIL;
-              }
+              response_size = set_meter_report_uint32(pTxBuf, rate_type, requested_scale, 0, voltage_l1);
             } else {
-                return RECEIVED_FRAME_STATUS_NO_SUPPORT;
+              return RECEIVED_FRAME_STATUS_NO_SUPPORT;
             }
             break;
           default:
