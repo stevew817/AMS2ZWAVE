@@ -133,7 +133,7 @@ static const param_desc_t parameter_table[] = {
         .param_default = PARAM_VALUE_U8(0),
         .param_min = PARAM_VALUE_U8(0),
         .param_max = PARAM_VALUE_U8(1),
-        .format = BITFIELD,
+        .format = ENUMERATED,
         .read_only = false,
         .is_advanced = false,
     },
