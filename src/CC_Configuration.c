@@ -36,6 +36,7 @@
  * * Add support for declaring a parameter as changing node capabilities
  *   (will require callback into application on change)
  * * Proper support of signed values
+ * * Implement bulk commands
  ******************************************************************************/
 #include "CC_Configuration.h"
 #include "ZW_TransportEndpoint.h"
@@ -80,7 +81,7 @@ typedef struct {
 #define PARAM_DESC_STR(x) { x, sizeof(x) - 1}
 
 typedef struct {
-  const uint8_t param_nbr;  // Configuration parameter number
+  const uint16_t param_nbr; // Configuration parameter number
   const uint8_t param_size; // Amount of bytes in parameter
   void* param;              // Memory location where parameter resides
   const parameter_string_t name;   // User-visible parameter name
@@ -152,7 +153,7 @@ typedef struct {
   bool in_progress;                             // is the content of this struct valid?
   TRANSMIT_OPTIONS_TYPE_SINGLE_EX pkg_options;  // transmit options for sending the next packet
   uint8_t command;                              // command ID to send the next packet with
-  uint8_t param_nbr;                            // parameter number to send the next packet with
+  uint16_t param_nbr;                           // parameter number to send the next packet with
   uint8_t num_packets_remaining;                // remaining number of packets to send
   const char* string;                           // base pointer to string being sent
   size_t string_length;                         // total size of string being sent
@@ -175,9 +176,9 @@ static void string_package_progress_cb( uint8_t status )
   pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.cmd =
       string_package_in_progress.command;
   pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.parameterNumber1 =
-      0;
+      (string_package_in_progress.param_nbr >> 8) & 0xFF;
   pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.parameterNumber2 =
-      string_package_in_progress.param_nbr;
+      string_package_in_progress.param_nbr & 0xFF;
   pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.reportsToFollow =
       string_package_in_progress.num_packets_remaining;
 
@@ -336,6 +337,7 @@ received_frame_status_t handleCommandClassConfiguration(
         TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
         RxToTxOptions(rxOpt, &pTxOptionsEx);
 
+        // Note: parameter numbers > 255 can only be addressed using bulk cmds.
         uint8_t param_nbr = pCmd->ZW_ConfigurationGetV4Frame.parameterNumber;
         const param_desc_t* param_descr = NULL;
         for( size_t i = 0;
@@ -402,6 +404,8 @@ received_frame_status_t handleCommandClassConfiguration(
       if( false == Check_not_legal_response_job(rxOpt) ) {
         // Command does not require sending back a report, we just need to apply
         // the new value.
+
+        // Note: parameter numbers > 255 can only be addressed using bulk cmds.
         uint8_t param_nbr = pCmd->ZW_ConfigurationSet1byteV4Frame.parameterNumber;
         uint8_t size = pCmd->ZW_ConfigurationSet1byteV4Frame.level & 0x7;
         uint8_t set_default = pCmd->ZW_ConfigurationSet1byteV4Frame.level >> 7;
@@ -475,12 +479,9 @@ received_frame_status_t handleCommandClassConfiguration(
         TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
         RxToTxOptions(rxOpt, &pTxOptionsEx);
 
-        // No support for parameters > 255 yet
-        if( pCmd->ZW_ConfigurationNameGetV4Frame.parameterNumber1 != 0 ) {
-          return RECEIVED_FRAME_STATUS_NO_SUPPORT;
-        }
+        uint16_t param_nbr =  pCmd->ZW_ConfigurationNameGetV4Frame.parameterNumber2;
+        param_nbr |= (pCmd->ZW_ConfigurationNameGetV4Frame.parameterNumber1 << 8);
 
-        uint8_t param_nbr = pCmd->ZW_ConfigurationNameGetV4Frame.parameterNumber2;
         const param_desc_t* param_descr = NULL;
         for( size_t i = 0;
              i < sizeof(parameter_table) / sizeof(parameter_table[0]);
@@ -504,8 +505,8 @@ received_frame_status_t handleCommandClassConfiguration(
 
         pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.cmdClass = COMMAND_CLASS_CONFIGURATION;
         pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.cmd = CONFIGURATION_NAME_REPORT_V4;
-        pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.parameterNumber1 = 0;
-        pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.parameterNumber2 = param_nbr;
+        pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.parameterNumber1 = (param_nbr >> 8) & 0xFF;
+        pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.parameterNumber2 = param_nbr & 0xFF;
 
         pTxBuf->ZW_ConfigurationNameReport1byteV4Frame.reportsToFollow =
           param_info_length / max_chars_per_report;
@@ -571,12 +572,9 @@ received_frame_status_t handleCommandClassConfiguration(
         TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
         RxToTxOptions(rxOpt, &pTxOptionsEx);
 
-        // No support for parameters > 255 yet
-        if( pCmd->ZW_ConfigurationInfoGetV4Frame.parameterNumber1 != 0 ) {
-          return RECEIVED_FRAME_STATUS_NO_SUPPORT;
-        }
+        uint16_t param_nbr =  pCmd->ZW_ConfigurationInfoGetV4Frame.parameterNumber2;
+        param_nbr |= (pCmd->ZW_ConfigurationInfoGetV4Frame.parameterNumber1 << 8);
 
-        uint8_t param_nbr = pCmd->ZW_ConfigurationInfoGetV4Frame.parameterNumber2;
         const param_desc_t* param_descr = NULL;
         for( size_t i = 0;
              i < sizeof(parameter_table) / sizeof(parameter_table[0]);
@@ -600,8 +598,8 @@ received_frame_status_t handleCommandClassConfiguration(
 
         pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.cmdClass = COMMAND_CLASS_CONFIGURATION;
         pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.cmd = CONFIGURATION_INFO_REPORT_V4;
-        pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.parameterNumber1 = 0;
-        pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.parameterNumber2 = param_nbr;
+        pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.parameterNumber1 = (param_nbr >> 8) & 0xFF;
+        pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.parameterNumber2 = param_nbr & 0xFF;
 
         pTxBuf->ZW_ConfigurationInfoReport1byteV4Frame.reportsToFollow =
           param_info_length / max_chars_per_report;
@@ -665,13 +663,10 @@ received_frame_status_t handleCommandClassConfiguration(
         TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
         RxToTxOptions(rxOpt, &pTxOptionsEx);
 
-        // No support for parameters > 255 yet
-        if( pCmd->ZW_ConfigurationPropertiesGetV4Frame.parameterNumber1 != 0 ) {
-          return RECEIVED_FRAME_STATUS_NO_SUPPORT;
-        }
+        uint16_t param_nbr =  pCmd->ZW_ConfigurationPropertiesGetV4Frame.parameterNumber2;
+        param_nbr |= (pCmd->ZW_ConfigurationPropertiesGetV4Frame.parameterNumber1 << 8);
 
-        uint8_t param_nbr = pCmd->ZW_ConfigurationPropertiesGetV4Frame.parameterNumber2;
-        uint8_t next_param_nbr;
+        uint16_t next_param_nbr;
         const param_desc_t* param_descr = NULL;
         for( size_t i = 0;
              i < sizeof(parameter_table) / sizeof(parameter_table[0]);
@@ -690,14 +685,14 @@ received_frame_status_t handleCommandClassConfiguration(
 
         pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.cmdClass = COMMAND_CLASS_CONFIGURATION;
         pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.cmd = CONFIGURATION_PROPERTIES_REPORT_V4;
-        pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.parameterNumber1 = 0;
-        pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.parameterNumber2 = param_nbr;
+        pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.parameterNumber1 = (param_nbr >> 8) & 0xFF;
+        pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.parameterNumber2 = param_nbr & 0xFF;
 
         // Handle undefined parameter case first
         if( param_descr == NULL ) {
           pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.properties1 = 0;
-          pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.minValue1 = 0; //actually next parameter number 1 due to declaring size = 0
-          pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.maxValue1 = parameter_table[0].param_nbr; //actually next parameter number 2 due to declaring size = 0
+          pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.minValue1 = (parameter_table[0].param_nbr >> 8) & 0xFF; //actually next parameter number 1 due to declaring size = 0
+          pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.maxValue1 = parameter_table[0].param_nbr & 0xFF; //actually next parameter number 2 due to declaring size = 0
           pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.defaultValue1 = 0x2; // Actually properties2 due to declaring size = 0, set no bulk support bit
 
           if( EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
@@ -726,8 +721,8 @@ received_frame_status_t handleCommandClassConfiguration(
             pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.maxValue1 = param_descr->param_max.u8;
             pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.defaultValue1 = param_descr->param_default.u8;
 
-            pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.nextParameterNumber1 = 0;
-            pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.nextParameterNumber2 = next_param_nbr;
+            pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.nextParameterNumber1 = (next_param_nbr >> 8) & 0xFF;
+            pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.nextParameterNumber2 = next_param_nbr & 0xFF;
             pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.properties2 = 0x2; // Set no bulk support bit
             if(param_descr->is_advanced)
               pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.properties2 |= 0x1;
@@ -743,8 +738,8 @@ received_frame_status_t handleCommandClassConfiguration(
             pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.defaultValue1 = param_descr->param_default.u16 >> 8;
             pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.defaultValue2 = param_descr->param_default.u16 & 0xFF;
 
-            pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.nextParameterNumber1 = 0;
-            pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.nextParameterNumber2 = next_param_nbr;
+            pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.nextParameterNumber1 = (next_param_nbr >> 8) & 0xFF;
+            pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.nextParameterNumber2 = next_param_nbr & 0xFF;
             pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.properties2 = 0x2; // Set no bulk support bit
             if(param_descr->is_advanced)
               pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.properties2 |= 0x1;
@@ -766,8 +761,8 @@ received_frame_status_t handleCommandClassConfiguration(
             pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.defaultValue3 = (param_descr->param_default.u32 >> 8) & 0xFF;
             pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.defaultValue4 = (param_descr->param_default.u32 >> 0) & 0xFF;
 
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.nextParameterNumber1 = 0;
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.nextParameterNumber2 = next_param_nbr;
+            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.nextParameterNumber1 = (next_param_nbr >> 8) & 0xFF;
+            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.nextParameterNumber2 = next_param_nbr & 0xFF;
             pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.properties2 = 0x2; // Set no bulk support bit
             if(param_descr->is_advanced)
               pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.properties2 |= 0x1;
