@@ -27,16 +27,10 @@
  ******************************************************************************/
 
 /*******************************************************************************
- * The current implementation adheres to Configuration CC v4, but lacks support
- * for bulk commands. This is fine from the standard's perspective (SDS13781) as
- * long as we advertise that we don't have support for it, and generate the
- * requisite response should we receive such a non-supported command.
- *
  * Todo:
  * * Add support for declaring a parameter as changing node capabilities
  *   (will require callback into application on change)
  * * Proper support of signed values
- * * Implement bulk commands
  ******************************************************************************/
 #include "CC_Configuration.h"
 #include "ZW_TransportEndpoint.h"
@@ -144,6 +138,7 @@ static const param_desc_t parameter_table[] = {
 // What to report for name and info on an undefined parameter number
 static const char undefined_param[] = "Unassigned parameter";
 // todo: figure out the actual max size...
+// Needs to be a multiple of 4!
 static const size_t max_chars_per_report = 40;
 
 /*******************************************************************************
@@ -227,6 +222,272 @@ static void string_package_progress_cb( uint8_t status )
   }
 }
 
+/*******************************************************************************
+ * Callback logic for only queueing one fragment of a bulk report at a time.
+ ******************************************************************************/
+typedef struct {
+  bool in_progress;               // is the content of this struct valid?
+  TRANSMIT_OPTIONS_TYPE_SINGLE_EX pkg_options;  // transmit options for sending the next packet
+  uint16_t param_nbr;             // Base parameter number for bulk report
+  uint8_t total_num_parameters;   // Total number of consecutive parameters being sent
+  uint8_t num_packets_remaining;  // remaining number of packets to send
+  uint8_t size_handshake_byte;    // index in string for sending the next packet
+} bulk_report_in_progress_t;
+
+static bulk_report_in_progress_t bulk_report_in_progress = {
+  .in_progress = false,
+};
+
+static void bulk_report_progress_cb( uint8_t status )
+{
+  ZAF_TRANSPORT_TX_BUFFER  TxBuf;
+  ZW_APPLICATION_TX_BUFFER *pTxBuf = &(TxBuf.appTxBuf);
+  memset((uint8_t*)pTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
+
+  // Name and info reports look identical besides their command ID.
+  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.cmdClass =
+      COMMAND_CLASS_CONFIGURATION_V4;
+  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.cmd =
+      CONFIGURATION_BULK_REPORT_V4;
+  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.parameterOffset1 =
+      (bulk_report_in_progress.param_nbr >> 8) & 0xFF;
+  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.parameterOffset2 =
+      bulk_report_in_progress.param_nbr & 0xFF;
+  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.reportsToFollow =
+      bulk_report_in_progress.num_packets_remaining;
+
+  size_t num_report_items;
+  size_t item_size = bulk_report_in_progress.size_handshake_byte & 0x7;
+  if( bulk_report_in_progress.num_packets_remaining > 0 ) {
+    num_report_items = max_chars_per_report / item_size;
+  } else {
+    num_report_items = ((bulk_report_in_progress.total_num_parameters * item_size) % max_chars_per_report) / item_size;
+  }
+
+  size_t total_packets = bulk_report_in_progress.total_num_parameters / (max_chars_per_report / item_size);
+  if( bulk_report_in_progress.total_num_parameters % (max_chars_per_report / item_size) != 0 ) {
+    total_packets += 1;
+  }
+
+  size_t this_pkt_offset = total_packets - bulk_report_in_progress.num_packets_remaining;
+  uint8_t* param_buffer = (uint8_t*)&pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.variantgroup1;
+
+  // Copy all parameters for this packet. It is assumed parameter existence and size
+  // has been validated before ending up in this CB.
+  for( size_t i = 0; i < num_report_items; i++ ) {
+    // For each parameter number, find it in the table and copy its value
+    bool param_found = false;
+    for( size_t j = 0;
+         j < sizeof(parameter_table) / sizeof(parameter_table[0]);
+         j++ ) {
+      if( parameter_table[j].param_nbr == bulk_report_in_progress.param_nbr + this_pkt_offset + i ) {
+        switch(item_size) {
+          case 1:
+            param_buffer[i * item_size] = *((uint8_t*)(parameter_table[j].param));
+            break;
+          case 2:
+            param_buffer[i * item_size + 0] = *((uint16_t*)(parameter_table[j].param)) >> 8;
+            param_buffer[i * item_size + 1] = *((uint16_t*)(parameter_table[j].param)) & 0xFF;
+            break;
+          case 4:
+            param_buffer[i * item_size + 0] = (*((uint32_t*)(parameter_table[j].param)) >> 24) & 0xFF;
+            param_buffer[i * item_size + 1] = (*((uint32_t*)(parameter_table[j].param)) >> 16) & 0xFF;
+            param_buffer[i * item_size + 2] = (*((uint32_t*)(parameter_table[j].param)) >>  8) & 0xFF;
+            param_buffer[i * item_size + 3] = (*((uint32_t*)(parameter_table[j].param)) >>  0) & 0xFF;
+            break;
+          default:
+            break;
+        }
+        break;
+      }
+    }
+
+    // SDS13781: A sending node SHOULD set this field to 0 for non-existing parameters
+    if( !param_found ) {
+      memset(&param_buffer[i * item_size], 0, item_size);
+    }
+  }
+
+  size_t report_size = (num_report_items * item_size) + offsetof(ZW_CONFIGURATION_BULK_REPORT_1BYTE_V4_FRAME, variantgroup1);
+
+  if( bulk_report_in_progress.num_packets_remaining > 0 ) {
+    if( EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
+          (uint8_t *)pTxBuf,
+          report_size,
+          &bulk_report_in_progress.pkg_options,
+          bulk_report_progress_cb) )
+    {
+      // Failed to queue the packet somehow, meaning we won't get a
+      // new callback. Give up on this transmission.
+      bulk_report_in_progress.in_progress = false;
+    }
+
+    bulk_report_in_progress.num_packets_remaining--;
+  } else {
+    if( EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
+          (uint8_t *)pTxBuf,
+          report_size,
+          &bulk_report_in_progress.pkg_options,
+          NULL) )
+    {
+      ;
+    }
+
+    // Full string has been transmitted
+    bulk_report_in_progress.in_progress = false;
+  }
+}
+
+// Start sending bulk report. Returns false if another bulk report is still in
+// progress.
+static bool bulk_report_send( uint16_t param, size_t num_param, bool handshake,
+                              TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx) {
+  // Figure out the size of the first parameter
+  size_t param_size = 0;
+  for( size_t i = 0;
+       i < sizeof(parameter_table) / sizeof(parameter_table[0]);
+       i++ ) {
+    if( parameter_table[i].param_nbr == param ) {
+      param_size = parameter_table[i].param_size;
+      break;
+    }
+  }
+
+  if( param_size == 0 ) {
+      // parameter offset points to non-existing parameter
+      // SDS13781 does not say what action we should take in this case,
+      // except that 'The Configuration Bulk Report Command MUST be
+      // returned in response to this command'. This implies we should
+      // choose some arbitrary length and run with it?
+      param_size = 1;
+  }
+
+  // For each parameter within the range, check whether they correspond to their
+  // default.
+  bool all_default = true;
+  for( size_t i = 0;
+       i < sizeof(parameter_table) / sizeof(parameter_table[0]);
+       i++ ) {
+    if( parameter_table[i].param_nbr >= param &&
+        parameter_table[i].param_nbr < (param + num_param) ) {
+      switch( param_size ) {
+        case 1:
+          if( *((uint8_t*)(parameter_table[i].param)) != parameter_table[i].param_default.u8 )
+            all_default = false;
+          break;
+        case 2:
+          if( *((uint16_t*)(parameter_table[i].param)) != parameter_table[i].param_default.u16 )
+            all_default = false;
+          break;
+        case 4:
+          if( *((uint32_t*)(parameter_table[i].param)) != parameter_table[i].param_default.u32)
+            all_default = false;
+          break;
+        default:
+          break;
+      }
+      break;
+    }
+  }
+
+  uint8_t size_handshake_byte = (param_size & 0x7) |
+                                (handshake ? (1 << 6) : 0) |
+                                (all_default ? (1 << 7) : 0);
+
+  size_t num_reports = (num_param * param_size) / max_chars_per_report;
+  if( (num_param * param_size) % max_chars_per_report != 0 )
+    num_reports++;
+
+  if( handshake ) {
+    // Handshake response requires answering in a single packet
+    num_reports = 1;
+  }
+
+  if( num_reports > 1 ) {
+    // Need to start multipart report, check there's none in progress yet
+    if( bulk_report_in_progress.in_progress )
+      return false;
+
+    // Set up new multipart report
+    bulk_report_in_progress.in_progress = true;
+    bulk_report_in_progress.pkg_options = *pTxOptionsEx;
+    bulk_report_in_progress.param_nbr = param;
+    bulk_report_in_progress.total_num_parameters = num_param;
+    bulk_report_in_progress.num_packets_remaining = num_reports;
+    bulk_report_in_progress.size_handshake_byte = size_handshake_byte;
+
+    bulk_report_progress_cb( 0 );
+  } else {
+    // We can send this report at once
+    ZAF_TRANSPORT_TX_BUFFER  TxBuf;
+    ZW_APPLICATION_TX_BUFFER *pTxBuf = &(TxBuf.appTxBuf);
+    memset((uint8_t*)pTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
+
+    // Name and info reports look identical besides their command ID.
+    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.cmdClass =
+        COMMAND_CLASS_CONFIGURATION_V4;
+    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.cmd =
+        CONFIGURATION_BULK_REPORT_V4;
+    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.parameterOffset1 =
+        param & 0xFF;
+    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.parameterOffset2 =
+        param & 0xFF;
+    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.reportsToFollow =
+        0;
+
+    uint8_t* param_buffer = (uint8_t*)&pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.variantgroup1;
+
+    // Copy all parameters for this packet. It is assumed parameter existence and size
+    // has been validated before ending up in this CB.
+    for( size_t i = 0; i < num_param; i++ ) {
+      // For each parameter number, find it in the table and copy its value
+      bool param_found = false;
+      for( size_t j = 0;
+           j < sizeof(parameter_table) / sizeof(parameter_table[0]);
+           j++ ) {
+        if( parameter_table[j].param_nbr == bulk_report_in_progress.param_nbr + i ) {
+          switch(param_size) {
+            case 1:
+              param_buffer[i * param_size] = *((uint8_t*)(parameter_table[j].param));
+              break;
+            case 2:
+              param_buffer[i * param_size + 0] = *((uint16_t*)(parameter_table[j].param)) >> 8;
+              param_buffer[i * param_size + 1] = *((uint16_t*)(parameter_table[j].param)) & 0xFF;
+              break;
+            case 4:
+              param_buffer[i * param_size + 0] = (*((uint32_t*)(parameter_table[j].param)) >> 24) & 0xFF;
+              param_buffer[i * param_size + 1] = (*((uint32_t*)(parameter_table[j].param)) >> 16) & 0xFF;
+              param_buffer[i * param_size + 2] = (*((uint32_t*)(parameter_table[j].param)) >>  8) & 0xFF;
+              param_buffer[i * param_size + 3] = (*((uint32_t*)(parameter_table[j].param)) >>  0) & 0xFF;
+              break;
+            default:
+              break;
+          }
+          break;
+        }
+      }
+
+      // SDS13781: A sending node SHOULD set this field to 0 for non-existing parameters
+      if( !param_found ) {
+        memset(&param_buffer[i * param_size], 0, param_size);
+      }
+    }
+
+    size_t report_size = (num_param * param_size) + offsetof(ZW_CONFIGURATION_BULK_REPORT_1BYTE_V4_FRAME, variantgroup1);
+
+    // Send it
+    if( EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
+        (uint8_t *)pTxBuf,
+        report_size,
+        &bulk_report_in_progress.pkg_options,
+        NULL) )
+    {
+      ;
+    }
+  }
+
+  return true;
+}
 
 /*******************************************************************************
  * NVM storage handling for configuration data
@@ -431,33 +692,31 @@ received_frame_status_t handleCommandClassConfiguration(
             return RECEIVED_FRAME_STATUS_NO_SUPPORT;
         }
 
-        uint32_t value;
         switch( param_descr->param_size ) {
           case 1:
-            value = pCmd->ZW_ConfigurationSet1byteV4Frame.configurationValue1;
-            if( set_default ) {
-                value = param_descr->param_default.u8;
-            }
-            *((uint8_t*)param_descr->param) = value;
+            if( set_default )
+              *((uint8_t*)param_descr->param) = param_descr->param_default.u8;
+            else
+              *((uint8_t*)param_descr->param) =
+                  pCmd->ZW_ConfigurationSet1byteV4Frame.configurationValue1;
             break;
           case 2:
-            value = pCmd->ZW_ConfigurationSet2byteV4Frame.configurationValue1 << 8;
-            value |= pCmd->ZW_ConfigurationSet2byteV4Frame.configurationValue2;
-            if( set_default ) {
-                value = param_descr->param_default.u16;
-            }
-            *((uint16_t*)param_descr->param) = value;
+            if( set_default )
+              *((uint16_t*)param_descr->param) = param_descr->param_default.u16;
+            else
+              *((uint16_t*)param_descr->param) =
+                  (pCmd->ZW_ConfigurationSet2byteV4Frame.configurationValue1 << 8) |
+                  (pCmd->ZW_ConfigurationSet2byteV4Frame.configurationValue2 << 0);
             break;
           case 4:
-            value = pCmd->ZW_ConfigurationSet4byteV4Frame.configurationValue1 << 24;
-            value |= pCmd->ZW_ConfigurationSet4byteV4Frame.configurationValue2 << 16;
-            value |= pCmd->ZW_ConfigurationSet4byteV4Frame.configurationValue3 << 8;
-            value |= pCmd->ZW_ConfigurationSet4byteV4Frame.configurationValue4;
-
-            if( set_default ) {
-                value = param_descr->param_default.u32;
-            }
-            *((uint32_t*)param_descr->param) = value;
+            if( set_default )
+              *((uint32_t*)param_descr->param) = param_descr->param_default.u32;
+            else
+              *((uint32_t*)param_descr->param) =
+                  (pCmd->ZW_ConfigurationSet4byteV4Frame.configurationValue1 << 24) |
+                  (pCmd->ZW_ConfigurationSet4byteV4Frame.configurationValue2 << 16) |
+                  (pCmd->ZW_ConfigurationSet4byteV4Frame.configurationValue3 <<  8) |
+                  (pCmd->ZW_ConfigurationSet4byteV4Frame.configurationValue4 <<  0);
             break;
           default:
             return RECEIVED_FRAME_STATUS_FAIL;
@@ -723,9 +982,7 @@ received_frame_status_t handleCommandClassConfiguration(
 
             pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.nextParameterNumber1 = (next_param_nbr >> 8) & 0xFF;
             pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.nextParameterNumber2 = next_param_nbr & 0xFF;
-            pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.properties2 = 0x2; // Set no bulk support bit
-            if(param_descr->is_advanced)
-              pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.properties2 |= 0x1;
+            pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame.properties2 = param_descr->is_advanced ? 1 : 0;
             response_size = sizeof(pTxBuf->ZW_ConfigurationPropertiesReport1byteV4Frame);
             break;
           case 2:
@@ -740,9 +997,7 @@ received_frame_status_t handleCommandClassConfiguration(
 
             pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.nextParameterNumber1 = (next_param_nbr >> 8) & 0xFF;
             pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.nextParameterNumber2 = next_param_nbr & 0xFF;
-            pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.properties2 = 0x2; // Set no bulk support bit
-            if(param_descr->is_advanced)
-              pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.properties2 |= 0x1;
+            pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame.properties2 = param_descr->is_advanced ? 1 : 0;
             response_size = sizeof(pTxBuf->ZW_ConfigurationPropertiesReport2byteV4Frame);
             break;
           case 4:
@@ -763,9 +1018,7 @@ received_frame_status_t handleCommandClassConfiguration(
 
             pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.nextParameterNumber1 = (next_param_nbr >> 8) & 0xFF;
             pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.nextParameterNumber2 = next_param_nbr & 0xFF;
-            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.properties2 = 0x2; // Set no bulk support bit
-            if(param_descr->is_advanced)
-              pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.properties2 |= 0x1;
+            pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame.properties2 = param_descr->is_advanced ? 1 : 0;
             response_size = sizeof(pTxBuf->ZW_ConfigurationPropertiesReport4byteV4Frame);
             break;
           default:
@@ -796,31 +1049,88 @@ received_frame_status_t handleCommandClassConfiguration(
       return RECEIVED_FRAME_STATUS_FAIL;
 
     case CONFIGURATION_BULK_GET_V4:
-    case CONFIGURATION_BULK_SET_V4:
-      // SDS13781: we may elect to ignore bulk configuration commands, given we
-      // issue a 'rejected request' command to the originating node, and set the
-      // No Bulk support bit in the properties report.
       if( false == Check_not_legal_response_job(rxOpt) ) {
-        ZAF_TRANSPORT_TX_BUFFER  TxBuf;
-        ZW_APPLICATION_TX_BUFFER *pTxBuf = &(TxBuf.appTxBuf);
-        memset((uint8_t*)pTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
-
         TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
         RxToTxOptions(rxOpt, &pTxOptionsEx);
 
-        pTxBuf->ZW_ApplicationRejectedRequestFrame.cmdClass = COMMAND_CLASS_APPLICATION_STATUS;
-        pTxBuf->ZW_ApplicationRejectedRequestFrame.cmd = APPLICATION_REJECTED_REQUEST;
-        pTxBuf->ZW_ApplicationRejectedRequestFrame.status = 0;
+        uint16_t param_nbr =  pCmd->ZW_ConfigurationBulkGetV4Frame.parameterOffset2;
+        param_nbr |= (pCmd->ZW_ConfigurationBulkGetV4Frame.parameterOffset1 << 8);
+        uint8_t num_params = pCmd->ZW_ConfigurationBulkGetV4Frame.numberOfParameters;
 
-        if( EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
-              (uint8_t *)pTxBuf,
-              sizeof(pTxBuf->ZW_ApplicationRejectedRequestFrame),
-              pTxOptionsEx,
-              NULL) )
-          {
-            /*Job failed */
-            ;
+        if( bulk_report_send( param_nbr, num_params,
+                              false, pTxOptionsEx) )
+          return RECEIVED_FRAME_STATUS_SUCCESS;
+
+        return RECEIVED_FRAME_STATUS_FAIL;
+      }
+      return RECEIVED_FRAME_STATUS_FAIL;
+    case CONFIGURATION_BULK_SET_V4:
+      if( false == Check_not_legal_response_job(rxOpt) ) {
+        TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx;
+        RxToTxOptions(rxOpt, &pTxOptionsEx);
+
+        uint16_t param_nbr =  pCmd->ZW_ConfigurationBulkSet1byteV4Frame.parameterOffset2;
+        param_nbr |= (pCmd->ZW_ConfigurationBulkSet1byteV4Frame.parameterOffset1 << 8);
+        uint8_t num_params = pCmd->ZW_ConfigurationBulkSet1byteV4Frame.numberOfParameters;
+        bool handshake = (pCmd->ZW_ConfigurationBulkSet1byteV4Frame.properties1 & (1 << 6)) != 0;
+        bool set_default = (pCmd->ZW_ConfigurationBulkSet1byteV4Frame.properties1 & (1 << 7)) != 0;
+        uint8_t param_size = pCmd->ZW_ConfigurationBulkSet1byteV4Frame.properties1 & 0x7;
+
+        uint8_t* value_buf = (uint8_t*)&pCmd->ZW_ConfigurationBulkSet1byteV4Frame.variantgroup1;
+
+        // Scroll through all known parameters, applying the value from the command
+        // as we go.
+        for( size_t i = 0;
+             i < sizeof(parameter_table) / sizeof(parameter_table[0]);
+             i++ ) {
+          if( parameter_table[i].param_nbr >= param_nbr &&
+              parameter_table[i].param_nbr < (param_nbr + num_params) ) {
+            if( param_size != parameter_table[i].param_size ) {
+              // Ignore parameters which size doesn't match with the declared size
+              // This is undefined behavior from the spec (SDS13781)
+              continue;
+            }
+
+            switch( param_size ) {
+              case 1:
+                if( set_default )
+                  *((uint8_t*)(parameter_table[i].param)) = parameter_table[i].param_default.u8;
+                else
+                  *((uint8_t*)(parameter_table[i].param)) = value_buf[(parameter_table[i].param_nbr - param_nbr) * param_size];
+                break;
+              case 2:
+                if( set_default )
+                  *((uint16_t*)(parameter_table[i].param)) = parameter_table[i].param_default.u16;
+                else
+                  *((uint16_t*)(parameter_table[i].param)) =
+                    (value_buf[(parameter_table[i].param_nbr - param_nbr) * param_size + 0] << 8) |
+                    (value_buf[(parameter_table[i].param_nbr - param_nbr) * param_size + 1] << 0);
+                break;
+              case 4:
+                if( set_default )
+                  *((uint32_t*)(parameter_table[i].param)) = parameter_table[i].param_default.u32;
+                else
+                  *((uint32_t*)(parameter_table[i].param)) =
+                    (value_buf[(parameter_table[i].param_nbr - param_nbr) * param_size + 0] << 24) |
+                    (value_buf[(parameter_table[i].param_nbr - param_nbr) * param_size + 1] << 16) |
+                    (value_buf[(parameter_table[i].param_nbr - param_nbr) * param_size + 2] <<  8) |
+                    (value_buf[(parameter_table[i].param_nbr - param_nbr) * param_size + 3] <<  0);
+                break;
+              default:
+                break;
+            }
           }
+        }
+
+        // Only send a report when handshake is set
+        if( handshake ) {
+          if( bulk_report_send( param_nbr, num_params,
+                                handshake, pTxOptionsEx) )
+            return RECEIVED_FRAME_STATUS_SUCCESS;
+          else
+            return RECEIVED_FRAME_STATUS_FAIL;
+        }
+
         return RECEIVED_FRAME_STATUS_SUCCESS;
       }
       return RECEIVED_FRAME_STATUS_FAIL;
