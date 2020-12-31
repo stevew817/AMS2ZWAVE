@@ -84,17 +84,17 @@ typedef struct {
   const uint16_t param_nbr; // Configuration parameter number
   const uint8_t param_size; // Amount of bytes in parameter
   void* param;              // Memory location where parameter resides
-  const parameter_string_t name;   // User-visible parameter name
-  const parameter_string_t info;   // User-visible parameter info
-  const parameter_value_t param_default;
-  const parameter_value_t param_min;
-  const parameter_value_t param_max;
-  const parameter_format_t format;
-  const bool read_only;
-  const bool is_advanced;
+  const parameter_string_t name;  // User-visible parameter name
+  const parameter_string_t info;  // User-visible parameter info
+  const parameter_value_t param_default;  // Default value for parameter
+  const parameter_value_t param_min;  // Minimum value for parameter
+  const parameter_value_t param_max;  // Maximum value for parameter
+  const parameter_format_t format;    // Parameter datatype
+  const bool read_only;   // True for read-only parameter (does not support set)
+  const bool is_advanced; // True for 'advanced' parameter (only has cosmetic purpose)
 } param_desc_t;
 
-// Runtime storage object
+// Runtime object
 SConfigurationData CC_ConfigurationData;
 
 /**************************** CUSTOMISE HERE **********************************/
@@ -127,11 +127,11 @@ static const param_desc_t parameter_table[] = {
     },
     {
         .param_nbr = 3,
-        .param_size = sizeof(CC_ConfigurationData.turn_off_hourly_report),
-        .param = &CC_ConfigurationData.turn_off_hourly_report,
+        .param_size = sizeof(CC_ConfigurationData.enable_hourly_report),
+        .param = &CC_ConfigurationData.enable_hourly_report,
         .name = PARAM_DESC_STR("Enable accumulated energy consumption reporting"),
-        .info = PARAM_DESC_STR("Whether to enable sending hourly accumulated energy consumption reports to lifeline group. 0 = enabled, 1 = disabled."),
-        .param_default = PARAM_VALUE_U8(0),
+        .info = PARAM_DESC_STR("Whether to enable sending hourly accumulated energy consumption reports to lifeline group. 0 = disabled, 1 = enabled."),
+        .param_default = PARAM_VALUE_U8(1),
         .param_min = PARAM_VALUE_U8(0),
         .param_max = PARAM_VALUE_U8(1),
         .format = ENUMERATED,
@@ -426,7 +426,7 @@ received_frame_status_t handleCommandClassConfiguration(
           return RECEIVED_FRAME_STATUS_NO_SUPPORT;
         }
 
-        // Ignore read-only parameters
+        // Ignore set for read-only parameters
         if( param_descr->read_only ) {
             return RECEIVED_FRAME_STATUS_NO_SUPPORT;
         }

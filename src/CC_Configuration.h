@@ -41,13 +41,15 @@ extern "C"
 typedef struct {
   uint8_t amount_of_10s_reports_for_meter_report;
   uint8_t power_change_for_meter_report;
-  uint8_t turn_off_hourly_report;
+  uint8_t enable_hourly_report;
 } SConfigurationData;
+
+// To declare your configuration parameter properties, edit CC_Configuration.c
 /*************************** END CUSTOMISATION ********************************/
 
 #define FILE_ID_CONFIGURATIONDATA (0x0001)
 
-// Access runtime value through CC_ConfigurationData object
+// Access values at runtime through CC_ConfigurationData object
 extern SConfigurationData CC_ConfigurationData;
 
 // Load all configuration parameters from storage

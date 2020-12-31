@@ -972,7 +972,7 @@ AppStateManager(EVENT_APP event)
 
       // ACTION: report on hourly update
       if (EVENT_APP_ENERGY_UPDATE == event) {
-        if(CC_ConfigurationData.turn_off_hourly_report == 0) {
+        if(CC_ConfigurationData.enable_hourly_report == 1) {
           CC_Meter_update_energy();
         }
       }
