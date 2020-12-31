@@ -1122,6 +1122,9 @@ received_frame_status_t handleCommandClassConfiguration(
           }
         }
 
+        // Save updated parameters
+        CC_Configuration_saveToNVM( NULL );
+
         // Only send a report when handshake is set
         if( handshake ) {
           if( bulk_report_send( param_nbr, num_params,
