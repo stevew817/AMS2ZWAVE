@@ -269,7 +269,6 @@ static const SProtocolConfig_t ProtocolConfig = {
   .pRadioConfig = &RadioConfig
 };
 
-
 /**
  * Setup AGI lifeline table from config_app.h
  */
@@ -409,7 +408,7 @@ static void EventHandlerZwRx(void)
   // Handle incoming replies
   while (xQueueReceive(Queue, (uint8_t*)(&RxPackage), 0) == pdTRUE)
   {
-    DPRINT("Incoming Rx msg\r\n");
+    DPRINTF("Incoming Rx msg %d\r\n", RxPackage.eReceiveType);
 
     switch (RxPackage.eReceiveType)
     {
@@ -460,7 +459,7 @@ static void EventHandlerZwCommandStatus(void)
   // Handle incoming replies
   while (xQueueReceive(Queue, (uint8_t*)(&Status), 0) == pdTRUE)
   {
-    DPRINT("Incoming Status msg\r\n");
+    DPRINTF("Incoming Status msg %d\r\n", Status.eStatusType);
 
     switch (Status.eStatusType)
     {
@@ -533,6 +532,7 @@ static void EventHandlerZwCommandStatus(void)
 
       case EZWAVECOMMANDSTATUS_NETWORK_LEARN_MODE_START:
       {
+        DPRINT("Started network learn mode\n");
         break;
       }
 
@@ -770,7 +770,7 @@ Transport_ApplicationCommandHandlerEx(
   uint8_t cmdLength)
 {
   received_frame_status_t frame_status = RECEIVED_FRAME_STATUS_NO_SUPPORT;
-  DPRINTF("\r\nTAppH %u", pCmd->ZW_Common.cmdClass);
+  DPRINTF("\r\nTAppH %u\r\n", pCmd->ZW_Common.cmdClass);
 
 
   /* Call command class handlers */
@@ -911,12 +911,14 @@ AppStateManager(EVENT_APP event)
 
       if(EVENT_APP_FLUSHMEM_READY == event)
       {
+        DPRINT("Flushmem\n");
         AppResetNvm();
         LoadConfiguration();
       }
 
       if(EVENT_APP_SMARTSTART_IN_PROGRESS == event)
       {
+        DPRINT("SS in progress\n");
         ChangeState(STATE_APP_LEARN_MODE);
       }
 
@@ -991,6 +993,7 @@ AppStateManager(EVENT_APP event)
 
       if(EVENT_APP_FLUSHMEM_READY == event)
       {
+        DPRINT("Learn flushmem\n");
         AppResetNvm();
         LoadConfiguration();
       }
@@ -1017,6 +1020,7 @@ AppStateManager(EVENT_APP event)
       {
         //Go back to smart start if the node was excluded.
         //Protocol will not commence SmartStart if the node is already included in the network.
+        DPRINT("retrigger SS\n");
         ZAF_setNetworkLearnMode(E_NETWORK_LEARN_MODE_INCLUSION_SMARTSTART, g_eResetReason);
 
         DPRINT("\r\nLEARN MODE FINISH\r\n");
@@ -1033,6 +1037,7 @@ AppStateManager(EVENT_APP event)
 
       if(EVENT_APP_FLUSHMEM_READY == event)
       {
+        DPRINT("App reset state\n");
         AppResetNvm();
         /* Soft reset */
         Board_ResetHandler();
@@ -1417,7 +1422,7 @@ void HAN_serial_rx(void)
   // Pump all bytes from what was the active buffer
   size_t bytes = rxBuf.data_size[read_buffer];
 
-  DPRINTF("Pumping %d bytes\n", bytes);
+  //DPRINTF("Pumping %d bytes\n", bytes);
   for(size_t i = 0; i < bytes; i++) {
     han_parser_input_byte(rxBuf.data[read_buffer][i]);
   }
@@ -1466,11 +1471,13 @@ void HAN_callback(const han_parser_data_t* decoded_data) {
 
   if(decoded_data->has_power_data) {
       active_power_watt = decoded_data->active_power_import;
+      DPRINTF("Active power: %d W\n", active_power_watt);
       list1_recv = true;
   }
 
   if(decoded_data->has_energy_data) {
       total_meter_reading = decoded_data->active_energy_import;
+      DPRINTF("Hourly report: accumulated %d Wh\n", total_meter_reading);
       list3_recv = true;
       is_list3 = true;
       HAN_storeToNVM(false, true);
@@ -1493,7 +1500,7 @@ void HAN_callback(const han_parser_data_t* decoded_data) {
 
   if((is_list3 || is_list2) &&
      currentState != STATE_APP_LEARN_MODE) {
-    // Indicate activity using the indicator LED
+    // Indicate activity using the indicator LED every 10s
     Board_IndicatorControl(200, 800, 1, false);
   }
 
