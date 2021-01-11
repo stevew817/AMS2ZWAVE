@@ -38,6 +38,8 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "SizeOf.h"
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -277,9 +279,7 @@ static void bulk_report_progress_cb( uint8_t status )
   for( size_t i = 0; i < num_report_items; i++ ) {
     // For each parameter number, find it in the table and copy its value
     bool param_found = false;
-    for( size_t j = 0;
-         j < sizeof(parameter_table) / sizeof(parameter_table[0]);
-         j++ ) {
+    for( size_t j = 0; j < sizeof_array(parameter_table); j++ ) {
       if( parameter_table[j].param_nbr == this_pkt_param_start + i ) {
         switch(item_size) {
           case 1:
@@ -344,9 +344,7 @@ static bool bulk_report_send( uint16_t param, size_t num_param, bool handshake,
                               TRANSMIT_OPTIONS_TYPE_SINGLE_EX *pTxOptionsEx) {
   // Figure out the size of the first parameter
   size_t param_size = 0;
-  for( size_t i = 0;
-       i < sizeof(parameter_table) / sizeof(parameter_table[0]);
-       i++ ) {
+  for( size_t i = 0; i < sizeof_array(parameter_table); i++ ) {
     if( parameter_table[i].param_nbr == param ) {
       param_size = parameter_table[i].param_size;
       break;
@@ -365,9 +363,7 @@ static bool bulk_report_send( uint16_t param, size_t num_param, bool handshake,
   // For each parameter within the range, check whether they correspond to their
   // default.
   bool all_default = true;
-  for( size_t i = 0;
-       i < sizeof(parameter_table) / sizeof(parameter_table[0]);
-       i++ ) {
+  for( size_t i = 0; i < sizeof_array(parameter_table); i++ ) {
     if( parameter_table[i].param_nbr >= param &&
         parameter_table[i].param_nbr < (param + num_param) ) {
       switch( param_size ) {
@@ -439,9 +435,7 @@ static bool bulk_report_send( uint16_t param, size_t num_param, bool handshake,
     for( size_t i = 0; i < num_param; i++ ) {
       // For each parameter number, find it in the table and copy its value
       bool param_found = false;
-      for( size_t j = 0;
-           j < sizeof(parameter_table) / sizeof(parameter_table[0]);
-           j++ ) {
+      for( size_t j = 0; j < sizeof_array(parameter_table); j++ ) {
         if( parameter_table[j].param_nbr == param + i ) {
           switch(param_size) {
             case 1:
@@ -598,9 +592,7 @@ received_frame_status_t handleCommandClassConfiguration(
         // Note: parameter numbers > 255 can only be addressed using bulk cmds.
         uint8_t param_nbr = pCmd->ZW_ConfigurationGetV4Frame.parameterNumber;
         const param_desc_t* param_descr = NULL;
-        for( size_t i = 0;
-             i < sizeof(parameter_table) / sizeof(parameter_table[0]);
-             i++ ) {
+        for( size_t i = 0; i < sizeof_array(parameter_table); i++ ) {
           if( parameter_table[i].param_nbr == param_nbr ) {
             param_descr = &parameter_table[i];
             break;
@@ -671,9 +663,7 @@ received_frame_status_t handleCommandClassConfiguration(
         uint8_t set_default = pCmd->ZW_ConfigurationSet1byteV4Frame.level >> 7;
 
         const param_desc_t* param_descr = NULL;
-        for( size_t i = 0;
-             i < sizeof(parameter_table) / sizeof(parameter_table[0]);
-             i++ ) {
+        for( size_t i = 0; i < sizeof_array(parameter_table); i++ ) {
           if( parameter_table[i].param_nbr == param_nbr &&
               parameter_table[i].param_size == size ) {
             param_descr = &parameter_table[i];
@@ -741,9 +731,7 @@ received_frame_status_t handleCommandClassConfiguration(
         param_nbr |= (pCmd->ZW_ConfigurationNameGetV4Frame.parameterNumber1 << 8);
 
         const param_desc_t* param_descr = NULL;
-        for( size_t i = 0;
-             i < sizeof(parameter_table) / sizeof(parameter_table[0]);
-             i++ ) {
+        for( size_t i = 0; i < sizeof_array(parameter_table); i++ ) {
           if( parameter_table[i].param_nbr == param_nbr ) {
             param_descr = &parameter_table[i];
             break;
@@ -834,9 +822,7 @@ received_frame_status_t handleCommandClassConfiguration(
         param_nbr |= (pCmd->ZW_ConfigurationInfoGetV4Frame.parameterNumber1 << 8);
 
         const param_desc_t* param_descr = NULL;
-        for( size_t i = 0;
-             i < sizeof(parameter_table) / sizeof(parameter_table[0]);
-             i++ ) {
+        for( size_t i = 0; i < sizeof_array(parameter_table); i++ ) {
           if( parameter_table[i].param_nbr == param_nbr ) {
             param_descr = &parameter_table[i];
             break;
@@ -926,9 +912,7 @@ received_frame_status_t handleCommandClassConfiguration(
 
         uint16_t next_param_nbr;
         const param_desc_t* param_descr = NULL;
-        for( size_t i = 0;
-             i < sizeof(parameter_table) / sizeof(parameter_table[0]);
-             i++ ) {
+        for( size_t i = 0; i < sizeof_array(parameter_table); i++ ) {
           if( parameter_table[i].param_nbr == param_nbr ) {
             param_descr = &parameter_table[i];
             if( i < (sizeof(parameter_table) / sizeof(parameter_table[0]) - 1) ) {
@@ -1079,9 +1063,7 @@ received_frame_status_t handleCommandClassConfiguration(
 
         // Scroll through all known parameters, applying the value from the command
         // as we go.
-        for( size_t i = 0;
-             i < sizeof(parameter_table) / sizeof(parameter_table[0]);
-             i++ ) {
+        for( size_t i = 0; i < sizeof_array(parameter_table); i++ ) {
           if( parameter_table[i].param_nbr >= param_nbr &&
               parameter_table[i].param_nbr < (param_nbr + num_params) ) {
             if( param_size != parameter_table[i].param_size ) {
