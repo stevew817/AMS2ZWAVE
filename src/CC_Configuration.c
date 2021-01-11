@@ -244,18 +244,6 @@ static void bulk_report_progress_cb( uint8_t status )
   ZW_APPLICATION_TX_BUFFER *pTxBuf = &(TxBuf.appTxBuf);
   memset((uint8_t*)pTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
 
-  // Name and info reports look identical besides their command ID.
-  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.cmdClass =
-      COMMAND_CLASS_CONFIGURATION_V4;
-  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.cmd =
-      CONFIGURATION_BULK_REPORT_V4;
-  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.parameterOffset1 =
-      (bulk_report_in_progress.param_nbr >> 8) & 0xFF;
-  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.parameterOffset2 =
-      bulk_report_in_progress.param_nbr & 0xFF;
-  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.reportsToFollow =
-      bulk_report_in_progress.num_packets_remaining;
-
   size_t num_report_items;
   size_t item_size = bulk_report_in_progress.size_handshake_byte & 0x7;
   if( bulk_report_in_progress.num_packets_remaining > 0 ) {
@@ -269,7 +257,19 @@ static void bulk_report_progress_cb( uint8_t status )
     total_packets += 1;
   }
 
-  size_t this_pkt_offset = total_packets - bulk_report_in_progress.num_packets_remaining;
+  size_t this_pkt_offset = total_packets - bulk_report_in_progress.num_packets_remaining - 1;
+  uint16_t this_pkt_param_start = bulk_report_in_progress.param_nbr + (this_pkt_offset * (max_chars_per_report / item_size));
+
+  // Name and info reports look identical besides their command ID.
+  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.cmdClass = COMMAND_CLASS_CONFIGURATION_V4;
+  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.cmd = CONFIGURATION_BULK_REPORT_V4;
+  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.parameterOffset1 = (this_pkt_param_start >> 8) & 0xFF;
+  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.parameterOffset2 = this_pkt_param_start & 0xFF;
+  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.numberOfParameters = num_report_items;
+  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.reportsToFollow = bulk_report_in_progress.num_packets_remaining;
+  pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.properties1 = bulk_report_in_progress.size_handshake_byte;
+
+
   uint8_t* param_buffer = (uint8_t*)&pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.variantgroup1;
 
   // Copy all parameters for this packet. It is assumed parameter existence and size
@@ -280,7 +280,7 @@ static void bulk_report_progress_cb( uint8_t status )
     for( size_t j = 0;
          j < sizeof(parameter_table) / sizeof(parameter_table[0]);
          j++ ) {
-      if( parameter_table[j].param_nbr == bulk_report_in_progress.param_nbr + this_pkt_offset + i ) {
+      if( parameter_table[j].param_nbr == this_pkt_param_start + i ) {
         switch(item_size) {
           case 1:
             param_buffer[i * item_size] = *((uint8_t*)(parameter_table[j].param));
@@ -413,7 +413,7 @@ static bool bulk_report_send( uint16_t param, size_t num_param, bool handshake,
     bulk_report_in_progress.pkg_options = *pTxOptionsEx;
     bulk_report_in_progress.param_nbr = param;
     bulk_report_in_progress.total_num_parameters = num_param;
-    bulk_report_in_progress.num_packets_remaining = num_reports;
+    bulk_report_in_progress.num_packets_remaining = num_reports - 1;
     bulk_report_in_progress.size_handshake_byte = size_handshake_byte;
 
     bulk_report_progress_cb( 0 );
@@ -424,16 +424,13 @@ static bool bulk_report_send( uint16_t param, size_t num_param, bool handshake,
     memset((uint8_t*)pTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
 
     // Name and info reports look identical besides their command ID.
-    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.cmdClass =
-        COMMAND_CLASS_CONFIGURATION_V4;
-    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.cmd =
-        CONFIGURATION_BULK_REPORT_V4;
-    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.parameterOffset1 =
-        param & 0xFF;
-    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.parameterOffset2 =
-        param & 0xFF;
-    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.reportsToFollow =
-        0;
+    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.cmdClass = COMMAND_CLASS_CONFIGURATION_V4;
+    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.cmd = CONFIGURATION_BULK_REPORT_V4;
+    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.parameterOffset1 = (param >> 8) & 0xFF;
+    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.parameterOffset2 =  param & 0xFF;
+    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.numberOfParameters = num_param;
+    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.reportsToFollow = 0;
+    pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.properties1 = size_handshake_byte;
 
     uint8_t* param_buffer = (uint8_t*)&pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.variantgroup1;
 
@@ -445,7 +442,7 @@ static bool bulk_report_send( uint16_t param, size_t num_param, bool handshake,
       for( size_t j = 0;
            j < sizeof(parameter_table) / sizeof(parameter_table[0]);
            j++ ) {
-        if( parameter_table[j].param_nbr == bulk_report_in_progress.param_nbr + i ) {
+        if( parameter_table[j].param_nbr == param + i ) {
           switch(param_size) {
             case 1:
               param_buffer[i * param_size] = *((uint8_t*)(parameter_table[j].param));
@@ -479,10 +476,10 @@ static bool bulk_report_send( uint16_t param, size_t num_param, bool handshake,
     if( EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
         (uint8_t *)pTxBuf,
         report_size,
-        &bulk_report_in_progress.pkg_options,
+        pTxOptionsEx,
         NULL) )
     {
-      ;
+      ; // Job failed
     }
   }
 
@@ -647,6 +644,8 @@ received_frame_status_t handleCommandClassConfiguration(
           default:
             return RECEIVED_FRAME_STATUS_FAIL;
         }
+
+        DPRINTF("Sending reply for CNF_GET %d\n", param_nbr);
 
         if( EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendResponseEP(
               (uint8_t *)pTxBuf,
