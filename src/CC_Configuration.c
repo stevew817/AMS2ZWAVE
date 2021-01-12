@@ -34,6 +34,7 @@
  ******************************************************************************/
 #include "CC_Configuration.h"
 #include "ZW_TransportEndpoint.h"
+#define DEBUGPRINT
 #include "DebugPrint.h"
 #include <stdbool.h>
 #include <string.h>
@@ -79,7 +80,7 @@ typedef struct {
 typedef struct {
   const uint16_t param_nbr; // Configuration parameter number
   const uint8_t param_size; // Amount of bytes in parameter
-  void* param;              // Memory location where parameter resides
+  void* const param;              // Memory location where parameter resides
   const parameter_string_t name;  // User-visible parameter name
   const parameter_string_t info;  // User-visible parameter info
   const parameter_value_t param_default;  // Default value for parameter
@@ -139,9 +140,8 @@ static const param_desc_t parameter_table[] = {
 
 // What to report for name and info on an undefined parameter number
 static const char undefined_param[] = "Unassigned parameter";
-// todo: figure out the actual max size...
-// Needs to be a multiple of 4!
-static const size_t max_chars_per_report = 40;
+// Constant value found empirically by https://github.com/N2641D
+static const size_t max_chars_per_report = 39;
 
 /*******************************************************************************
  * Callback logic for only queueing one fragment of a string report at a time.
@@ -201,11 +201,13 @@ static void string_package_progress_cb( uint8_t status )
           &string_package_in_progress.pkg_options,
           string_package_progress_cb) )
     {
+      DPRINTF("Failed Tx of string package %d\n", string_package_in_progress.num_packets_remaining);
       // Failed to queue the packet somehow, meaning we won't get a
       // new callback. Give up on this transmission.
       string_package_in_progress.in_progress = false;
     }
 
+    DPRINTF("Sent package #%d\n", string_package_in_progress.num_packets_remaining);
     string_package_in_progress.num_packets_remaining--;
     string_package_in_progress.offset += report_size - 5;
 
@@ -220,6 +222,7 @@ static void string_package_progress_cb( uint8_t status )
     }
 
     // Full string has been transmitted
+    DPRINTF("Successfully sent report for param %d\n", string_package_in_progress.param_nbr);
     string_package_in_progress.in_progress = false;
   }
 }
@@ -248,15 +251,15 @@ static void bulk_report_progress_cb( uint8_t status )
 
   size_t num_report_items;
   size_t item_size = bulk_report_in_progress.size_handshake_byte & 0x7;
+  size_t items_per_block = max_chars_per_report / item_size;
+  size_t total_packets = ( ( (bulk_report_in_progress.total_num_parameters * item_size) - 1)
+                           / (items_per_block * item_size) )
+                         + 1;
+
   if( bulk_report_in_progress.num_packets_remaining > 0 ) {
     num_report_items = max_chars_per_report / item_size;
   } else {
-    num_report_items = ((bulk_report_in_progress.total_num_parameters * item_size) % max_chars_per_report) / item_size;
-  }
-
-  size_t total_packets = bulk_report_in_progress.total_num_parameters / (max_chars_per_report / item_size);
-  if( bulk_report_in_progress.total_num_parameters % (max_chars_per_report / item_size) != 0 ) {
-    total_packets += 1;
+    num_report_items = bulk_report_in_progress.total_num_parameters - (total_packets - 1) * items_per_block;
   }
 
   size_t this_pkt_offset = total_packets - bulk_report_in_progress.num_packets_remaining - 1;
@@ -271,7 +274,6 @@ static void bulk_report_progress_cb( uint8_t status )
   pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.reportsToFollow = bulk_report_in_progress.num_packets_remaining;
   pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.properties1 = bulk_report_in_progress.size_handshake_byte;
 
-
   uint8_t* param_buffer = (uint8_t*)&pTxBuf->ZW_ConfigurationBulkReport1byteV4Frame.variantgroup1;
 
   // Copy all parameters for this packet. It is assumed parameter existence and size
@@ -281,6 +283,7 @@ static void bulk_report_progress_cb( uint8_t status )
     bool param_found = false;
     for( size_t j = 0; j < sizeof_array(parameter_table); j++ ) {
       if( parameter_table[j].param_nbr == this_pkt_param_start + i ) {
+        param_found = true;
         switch(item_size) {
           case 1:
             param_buffer[i * item_size] = *((uint8_t*)(parameter_table[j].param));
@@ -390,9 +393,9 @@ static bool bulk_report_send( uint16_t param, size_t num_param, bool handshake,
                                 (handshake ? (1 << 6) : 0) |
                                 (all_default ? (1 << 7) : 0);
 
-  size_t num_reports = (num_param * param_size) / max_chars_per_report;
-  if( (num_param * param_size) % max_chars_per_report != 0 )
-    num_reports++;
+  size_t num_reports = ( ((num_param * param_size) - 1)
+                         / ( (max_chars_per_report / param_size) * param_size) )
+                       +1;
 
   if( handshake ) {
     // Handshake response requires answering in a single packet
@@ -437,6 +440,7 @@ static bool bulk_report_send( uint16_t param, size_t num_param, bool handshake,
       bool param_found = false;
       for( size_t j = 0; j < sizeof_array(parameter_table); j++ ) {
         if( parameter_table[j].param_nbr == param + i ) {
+          param_found = true;
           switch(param_size) {
             case 1:
               param_buffer[i * param_size] = *((uint8_t*)(parameter_table[j].param));
