@@ -1360,20 +1360,14 @@ Wire Wire Line
 	8350 3650 7850 3650
 Wire Wire Line
 	8350 3250 7850 3250
-NoConn ~ 8350 3550
-NoConn ~ 8350 3450
-NoConn ~ 8350 3350
 NoConn ~ 8350 5350
 NoConn ~ 8350 5450
 NoConn ~ 8350 5550
 NoConn ~ 8350 5650
 NoConn ~ 8350 5750
 NoConn ~ 8350 5850
-NoConn ~ 9950 5850
-NoConn ~ 9950 5550
 NoConn ~ 9950 5450
 NoConn ~ 9950 5350
-NoConn ~ 9950 5250
 NoConn ~ 9950 4650
 NoConn ~ 9950 4550
 $Comp
@@ -1415,7 +1409,6 @@ Wire Wire Line
 	10750 1050 10750 1250
 NoConn ~ 9950 4250
 NoConn ~ 9950 3650
-NoConn ~ 9950 3250
 NoConn ~ 9950 3150
 NoConn ~ 9950 3050
 NoConn ~ 9950 2950
@@ -1832,7 +1825,6 @@ NoConn ~ 5950 3300
 NoConn ~ 5950 3500
 Wire Wire Line
 	10150 3750 10150 2850
-NoConn ~ 9950 3450
 Text GLabel 4550 4400 0    50   Input ~ 0
 HAN_TX
 Wire Wire Line
@@ -2011,7 +2003,7 @@ U 1 1 60045B35
 P 7850 5350
 F 0 "J7" V 8000 5300 50  0000 L CNN
 F 1 "Conn_Coaxial" V 7823 5450 50  0001 L CNN
-F 2 "Connector_Coaxial:SMA_Amphenol_132134-16_Vertical" H 7850 5350 50  0001 C CNN
+F 2 "Connector_Coaxial:SMA_Samtec_SMA-J-P-X-ST-EM1_EdgeMount" H 7850 5350 50  0001 C CNN
 F 3 " ~" H 7850 5350 50  0001 C CNN
 	1    7850 5350
 	0    1    1    0   
@@ -2026,4 +2018,83 @@ Wire Wire Line
 Connection ~ 7500 5350
 Wire Wire Line
 	7500 5350 7500 5400
+$Comp
+L Connector:TestPoint TP1
+U 1 1 6020C5DE
+P 8350 3350
+F 0 "TP1" V 8350 3700 50  0000 C CNN
+F 1 "TestPoint" V 8454 3422 50  0001 C CNN
+F 2 "TestPoint:TestPoint_THTPad_D1.0mm_Drill0.5mm" H 8550 3350 50  0001 C CNN
+F 3 "~" H 8550 3350 50  0001 C CNN
+	1    8350 3350
+	0    -1   -1   0   
+$EndComp
+$Comp
+L Connector:TestPoint TP2
+U 1 1 6020DBC5
+P 8350 3450
+F 0 "TP2" V 8350 3800 50  0000 C CNN
+F 1 "TestPoint" V 8454 3522 50  0001 C CNN
+F 2 "TestPoint:TestPoint_THTPad_D1.0mm_Drill0.5mm" H 8550 3450 50  0001 C CNN
+F 3 "~" H 8550 3450 50  0001 C CNN
+	1    8350 3450
+	0    -1   -1   0   
+$EndComp
+$Comp
+L Connector:TestPoint TP3
+U 1 1 6020DE23
+P 8350 3550
+F 0 "TP3" V 8350 3900 50  0000 C CNN
+F 1 "TestPoint" V 8454 3622 50  0001 C CNN
+F 2 "TestPoint:TestPoint_THTPad_D1.0mm_Drill0.5mm" H 8550 3550 50  0001 C CNN
+F 3 "~" H 8550 3550 50  0001 C CNN
+	1    8350 3550
+	0    -1   -1   0   
+$EndComp
+$Comp
+L Connector:TestPoint TP5
+U 1 1 60254A15
+P 9950 5850
+F 0 "TP5" V 9950 6200 50  0000 C CNN
+F 1 "TestPoint" V 10054 5922 50  0001 C CNN
+F 2 "TestPoint:TestPoint_THTPad_D1.0mm_Drill0.5mm" H 10150 5850 50  0001 C CNN
+F 3 "~" H 10150 5850 50  0001 C CNN
+	1    9950 5850
+	0    1    1    0   
+$EndComp
+$Comp
+L Connector:TestPoint TP4
+U 1 1 6025583D
+P 9950 5550
+F 0 "TP4" V 9950 5900 50  0000 C CNN
+F 1 "TestPoint" V 10054 5622 50  0001 C CNN
+F 2 "TestPoint:TestPoint_THTPad_D1.0mm_Drill0.5mm" H 10150 5550 50  0001 C CNN
+F 3 "~" H 10150 5550 50  0001 C CNN
+	1    9950 5550
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	9950 5250 10150 5250
+$Comp
+L Connector:TestPoint TP7
+U 1 1 602C5F56
+P 9950 3450
+F 0 "TP7" V 10000 3550 50  0000 C CNN
+F 1 "TestPoint" V 10054 3522 50  0001 C CNN
+F 2 "TestPoint:TestPoint_THTPad_D1.0mm_Drill0.5mm" H 10150 3450 50  0001 C CNN
+F 3 "~" H 10150 3450 50  0001 C CNN
+	1    9950 3450
+	0    1    1    0   
+$EndComp
+$Comp
+L Connector:TestPoint TP6
+U 1 1 602C710B
+P 9950 3250
+F 0 "TP6" V 9900 3350 50  0000 C CNN
+F 1 "TestPoint" V 10054 3322 50  0001 C CNN
+F 2 "TestPoint:TestPoint_THTPad_D1.0mm_Drill0.5mm" H 10150 3250 50  0001 C CNN
+F 3 "~" H 10150 3250 50  0001 C CNN
+	1    9950 3250
+	0    1    1    0   
+$EndComp
 $EndSCHEMATC
