@@ -1423,15 +1423,15 @@ $Comp
 L Connector:Conn_Coaxial J2
 U 1 1 6043B78F
 P 7500 5050
-F 0 "J2" H 7428 5288 50  0000 C CNN
-F 1 "Conn_Coaxial" H 7428 5197 50  0000 C CNN
+F 0 "J2" H 7500 5200 50  0000 C CNN
+F 1 "Conn_Coaxial" H 7428 5197 50  0001 C CNN
 F 2 "Connector_Coaxial:U.FL_Molex_MCRF_73412-0110_Vertical" H 7500 5050 50  0001 C CNN
 F 3 " ~" H 7500 5050 50  0001 C CNN
 	1    7500 5050
 	-1   0    0    -1  
 $EndComp
 Wire Wire Line
-	7500 5250 7500 5400
+	7500 5250 7500 5350
 $Comp
 L power:GND #PWR0126
 U 1 1 6044B997
@@ -1487,7 +1487,7 @@ F 3 "~" H 6650 950 50  0001 C CNN
 	1    0    0    -1  
 $EndComp
 Wire Wire Line
-	7700 5050 8350 5050
+	7700 5050 7850 5050
 Wire Wire Line
 	8350 3150 7850 3150
 Wire Wire Line
@@ -2005,4 +2005,25 @@ Wire Wire Line
 	5950 1400 6200 1400
 Wire Wire Line
 	6500 1400 6550 1400
+$Comp
+L Connector:Conn_Coaxial J7
+U 1 1 60045B35
+P 7850 5350
+F 0 "J7" V 8000 5300 50  0000 L CNN
+F 1 "Conn_Coaxial" V 7823 5450 50  0001 L CNN
+F 2 "Connector_Coaxial:SMA_Amphenol_132134-16_Vertical" H 7850 5350 50  0001 C CNN
+F 3 " ~" H 7850 5350 50  0001 C CNN
+	1    7850 5350
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	7850 5150 7850 5050
+Connection ~ 7850 5050
+Wire Wire Line
+	7850 5050 8350 5050
+Wire Wire Line
+	7650 5350 7500 5350
+Connection ~ 7500 5350
+Wire Wire Line
+	7500 5350 7500 5400
 $EndSCHEMATC
