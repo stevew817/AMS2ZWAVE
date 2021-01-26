@@ -942,11 +942,29 @@ AppStateManager(EVENT_APP event)
         ChangeState(STATE_APP_LEARN_MODE);
       }
 
+      static uint32_t hour_ticks = 0;
       bool send_power_report = false;
       // ACTION: AMS2ZWAVE list 1 received (2.5s interval)
       if (EVENT_APP_POWER_UPDATE_FAST == event ||
           EVENT_APP_POWER_UPDATE_SLOW == event ||
           EVENT_APP_ENERGY_UPDATE == event) {
+
+        // TODO: I have absolutely no clue why, but in steady-state operation
+        // the application seems to hang after a couple of hours. The watchdog
+        // doesn't seem to be doing its job either. For now, I'm putting in a
+        // hard reset on the second update after two hourly updates have been
+        // received, meaning the maximum uptime becomes 3 hours and 2.5 seconds.
+        //
+        // This issue should be investigated more closely when it's not so damn
+        // cold outside.
+        if( hour_ticks >= 2 ) {
+          hour_ticks++;
+        }
+
+        if( hour_ticks >= 4 ) {
+          NVIC_SystemReset();
+        }
+
         if( CC_ConfigurationData.power_change_for_meter_report > 0 ) {
           uint32_t watt_trigger = CC_ConfigurationData.power_change_for_meter_report * 100;
           if( active_power_watt > last_reported_power_watt + watt_trigger ||
@@ -974,6 +992,7 @@ AppStateManager(EVENT_APP event)
 
       // ACTION: report on hourly update
       if (EVENT_APP_ENERGY_UPDATE == event) {
+        hour_ticks++;
         if(CC_ConfigurationData.enable_hourly_report == 1) {
           CC_Meter_update_energy();
         }
