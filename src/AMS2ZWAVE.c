@@ -950,18 +950,19 @@ AppStateManager(EVENT_APP event)
           EVENT_APP_ENERGY_UPDATE == event) {
 
         // TODO: I have absolutely no clue why, but in steady-state operation
-        // the application seems to hang after a couple of hours. The watchdog
-        // doesn't seem to be doing its job either. For now, I'm putting in a
-        // hard reset on the second update after two hourly updates have been
-        // received, meaning the maximum uptime becomes 3 hours and 2.5 seconds.
+        // the application seems to hang after a while (observed anywhere
+        // between 1.5-4h). The watchdog doesn't seem to be doing its job
+        // either. For now, I'm putting in a hard reset on the second update
+        // after an hourly update has been received, meaning the maximum uptime
+        // becomes 1 hour and 2.5 seconds before restart.
         //
         // This issue should be investigated more closely when it's not so damn
-        // cold outside.
-        if( hour_ticks >= 2 ) {
+        // cold outside anymore.
+        if( hour_ticks > 0 ) {
           hour_ticks++;
         }
 
-        if( hour_ticks >= 4 ) {
+        if( hour_ticks >= 3 ) {
           NVIC_SystemReset();
         }
 
