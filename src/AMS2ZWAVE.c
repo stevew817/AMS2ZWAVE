@@ -127,8 +127,16 @@ void HAN_loadFromNVM(void);
 void HAN_storeToNVM(bool update_meter, bool update_accumulated);
 void HAN_resetNVM(void);
 
+void* CC_Meter_prepare_zaf_tse_data(RECEIVE_OPTIONS_TYPE_EX* pRxOpt);
 void CC_Meter_update_power(void);
 void CC_Meter_update_energy(void);
+void CC_Meter_report_unhandled_as_voltage(
+    TRANSMIT_OPTIONS_TYPE_SINGLE_EX txOptions,
+    void* pData);
+void CC_Meter_report_unhandled_as_current(
+    TRANSMIT_OPTIONS_TYPE_SINGLE_EX txOptions,
+    void* pData);
+
 
 received_frame_status_t
 handleCommandClassMeter(
@@ -149,6 +157,9 @@ handleCommandClassConfiguration(
 
 // AMS2ZWAVE does not have extra LEDs or buttons besides APP_BUTTON_LEARN_RESET
 // and APP_LED_INDICATOR
+
+static EZwaveCommandStatusType unhandledCommandStatus;
+static EZwaveReceiveType unhandledPacket;
 
 /****************************************************************************/
 /*                      PRIVATE TYPES and DEFINITIONS                       */
@@ -430,16 +441,10 @@ static void EventHandlerZwRx(void)
         break;
       }
 
-      case EZWAVERECEIVETYPE_STAY_AWAKE:
-      {
-        /* Since we're an AOS, we can ignore this seeing we're always awake */
-        break;
-      }
-
     default:
       {
-        DPRINTF("Failed to handle incoming msg with type %d\n", RxPackage.eReceiveType);
-        ASSERT(false);
+        unhandledPacket = RxPackage.eReceiveType;
+        ZAF_EventHelperEventEnqueue(EVENT_APP_UNHANDLED_PACKET);
         break;
       }
     }
@@ -459,8 +464,6 @@ static void EventHandlerZwCommandStatus(void)
   // Handle incoming replies
   while (xQueueReceive(Queue, (uint8_t*)(&Status), 0) == pdTRUE)
   {
-    DPRINTF("Incoming Status msg %d\r\n", Status.eStatusType);
-
     switch (Status.eStatusType)
     {
       case EZWAVECOMMANDSTATUS_TX:
@@ -540,7 +543,6 @@ static void EventHandlerZwCommandStatus(void)
       { // Received when protocol is started (not implemented yet), and when SetDefault command is completed
         DPRINTF("Protocol Ready\r\n");
         ZAF_EventHelperEventEnqueue(EVENT_APP_FLUSHMEM_READY);
-
         break;
       }
 
@@ -565,6 +567,39 @@ static void EventHandlerZwCommandStatus(void)
         // Add your application code here...
         break;
       }
+
+      case EZWAVECOMMANDSTATUS_NODE_INFO:
+      case EZWAVECOMMANDSTATUS_SET_RF_RECEIVE_MODE:
+      case EZWAVECOMMANDSTATUS_IS_NODE_WITHIN_DIRECT_RANGE:
+      case EZWAVECOMMANDSTATUS_GET_NEIGHBOR_COUNT:
+      case EZWAVECOMMANDSTATUS_ARE_NODES_NEIGHBOURS:
+      case EZWAVECOMMANDSTATUS_IS_FAILED_NODE_ID:
+      case EZWAVECOMMANDSTATUS_GET_ROUTING_TABLE_LINE:
+      case EZWAVECOMMANDSTATUS_SET_ROUTING_INFO:
+      case EZWAVECOMMANDSTATUS_STORE_NODE_INFO:
+      case EZWAVECOMMANDSTATUS_GET_PRIORITY_ROUTE:
+      case EZWAVECOMMANDSTATUS_SET_PRIORITY_ROUTE:
+      case EZWAVECOMMANDSTATUS_SET_SLAVE_LEARN_MODE:
+      case EZWAVECOMMANDSTATUS_SET_SLAVE_LEARN_MODE_RESULT:
+      case EZWAVECOMMANDSTATUS_IS_VIRTUAL_NODE:
+      case EZWAVECOMMANDSTATUS_GET_VIRTUAL_NODES:
+      case EZWAVECOMMANDSTATUS_GET_CONTROLLER_CAPABILITIES:
+      case EZWAVECOMMANDSTATUS_IS_PRIMARY_CTRL:
+      case EZWAVECOMMANDSTATUS_NETWORK_MANAGEMENT:
+      case EZWAVECOMMANDSTATUS_GET_BACKGROUND_RSSI:
+      case EZWAVECOMMANDSTATUS_AES_ECB:
+      case EZWAVECOMMANDSTATUS_REMOVE_FAILED_NODE_ID:
+      case EZWAVECOMMANDSTATUS_REPLACE_FAILED_NODE_ID:
+      case EZWAVECOMMANDSTATUS_NVM_BACKUP_RESTORE:
+      case EZWAVECOMMANDSTATUS_PM_SET_POWERDOWN_CALLBACK:
+      case EZWAVECOMMANDSTATUS_ZW_GET_INCLUDED_NODES:
+      case EZWAVECOMMANDSTATUS_ZW_REQUESTNODENEIGHBORUPDATE:
+      case EZWAVECOMMANDSTATUS_ZW_INITIATE_SHUTDOWN:
+      case EZWAVECOMMANDSTATUS_ZW_GET_INCLUDED_LR_NODES:
+      case EZWAVECOMMANDSTATUS_ZW_GET_LR_CHANNEL:
+        unhandledCommandStatus = Status.eStatusType;
+        ZAF_EventHelperEventEnqueue(EVENT_APP_UNHANDLED_STATUS);
+        break;
 
       default:
         ASSERT(false);
@@ -942,30 +977,11 @@ AppStateManager(EVENT_APP event)
         ChangeState(STATE_APP_LEARN_MODE);
       }
 
-      static uint32_t hour_ticks = 0;
       bool send_power_report = false;
       // ACTION: AMS2ZWAVE list 1 received (2.5s interval)
       if (EVENT_APP_POWER_UPDATE_FAST == event ||
           EVENT_APP_POWER_UPDATE_SLOW == event ||
           EVENT_APP_ENERGY_UPDATE == event) {
-
-        // TODO: I have absolutely no clue why, but in steady-state operation
-        // the application seems to hang after a while (observed anywhere
-        // between 1.5-4h). The watchdog doesn't seem to be doing its job
-        // either. For now, I'm putting in a hard reset on the second update
-        // after an hourly update has been received, meaning the maximum uptime
-        // becomes 1 hour and 2.5 seconds before restart.
-        //
-        // This issue should be investigated more closely when it's not so damn
-        // cold outside anymore.
-        if( hour_ticks > 0 ) {
-          hour_ticks++;
-        }
-
-        if( hour_ticks >= 3 ) {
-          NVIC_SystemReset();
-        }
-
         if( CC_ConfigurationData.power_change_for_meter_report > 0 ) {
           uint32_t watt_trigger = CC_ConfigurationData.power_change_for_meter_report * 100;
           if( active_power_watt > last_reported_power_watt + watt_trigger ||
@@ -993,16 +1009,34 @@ AppStateManager(EVENT_APP event)
 
       // ACTION: report on hourly update
       if (EVENT_APP_ENERGY_UPDATE == event) {
-        hour_ticks++;
         if(CC_ConfigurationData.enable_hourly_report == 1) {
           CC_Meter_update_energy();
         }
       }
 
-      if(send_power_report) {
+      if (send_power_report) {
         CC_Meter_update_power();
       }
 
+      if (EVENT_APP_UNHANDLED_STATUS == event) {
+          DPRINTF("Unimplemented command status handler for response %d\r\n", unhandledCommandStatus);
+#ifndef NDEBUG
+          // Signal unhandled type remotely by sending a report on the currently
+          // non-reporting voltage value
+          void * pData = CC_Meter_prepare_zaf_tse_data(&zaf_tse_local_actuation);
+          ZAF_TSE_Trigger((void *)CC_Meter_report_unhandled_as_voltage, pData, true);
+#endif
+      }
+
+      if (EVENT_APP_UNHANDLED_PACKET == event) {
+          DPRINTF("Failed to handle incoming msg with type %d\n", unhandledPacket);
+#ifndef NDEBUG
+          // Signal unhandled type remotely by sending a report on the currently
+          // non-reporting voltage value
+          void * pData = CC_Meter_prepare_zaf_tse_data(&zaf_tse_local_actuation);
+          ZAF_TSE_Trigger((void *)CC_Meter_report_unhandled_as_current, pData, true);
+#endif
+      }
       break;
 
     case STATE_APP_LEARN_MODE:
@@ -1944,6 +1978,60 @@ void CC_Meter_report_energy(
   memset((uint8_t*)pTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
 
   uint8_t response_size = set_meter_report_uint32(pTxBuf, RT_IMPORT, SCALE_KWH, 3, total_meter_reading - meter_offset);
+
+  if (EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendRequestEP((uint8_t *)pTxBuf,
+                                                                response_size,
+                                                                &txOptions,
+                                                                ZAF_TSE_TXCallback))
+  {
+    //sending request failed
+    DPRINTF("%s(): Transport_SendRequestEP() failed. \n", __func__);
+  }
+}
+
+void CC_Meter_report_unhandled_as_voltage(
+    TRANSMIT_OPTIONS_TYPE_SINGLE_EX txOptions,
+    void* pData)
+{
+  DPRINTF("* %s() *\n"
+      "\ttxOpt.src = %d\n"
+      "\ttxOpt.options %#02x\n"
+      "\ttxOpt.secOptions %#02x\n",
+      __func__, txOptions.sourceEndpoint, txOptions.txOptions, txOptions.txSecOptions);
+
+  /* Prepare payload for report */
+  ZAF_TRANSPORT_TX_BUFFER  TxBuf;
+  ZW_APPLICATION_TX_BUFFER *pTxBuf = &(TxBuf.appTxBuf);
+  memset((uint8_t*)pTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
+
+  uint8_t response_size = set_meter_report_uint32(pTxBuf, RT_IMPORT, SCALE_V, 0, unhandledCommandStatus);
+
+  if (EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendRequestEP((uint8_t *)pTxBuf,
+                                                                response_size,
+                                                                &txOptions,
+                                                                ZAF_TSE_TXCallback))
+  {
+    //sending request failed
+    DPRINTF("%s(): Transport_SendRequestEP() failed. \n", __func__);
+  }
+}
+
+void CC_Meter_report_unhandled_as_current(
+    TRANSMIT_OPTIONS_TYPE_SINGLE_EX txOptions,
+    void* pData)
+{
+  DPRINTF("* %s() *\n"
+      "\ttxOpt.src = %d\n"
+      "\ttxOpt.options %#02x\n"
+      "\ttxOpt.secOptions %#02x\n",
+      __func__, txOptions.sourceEndpoint, txOptions.txOptions, txOptions.txSecOptions);
+
+  /* Prepare payload for report */
+  ZAF_TRANSPORT_TX_BUFFER  TxBuf;
+  ZW_APPLICATION_TX_BUFFER *pTxBuf = &(TxBuf.appTxBuf);
+  memset((uint8_t*)pTxBuf, 0, sizeof(ZW_APPLICATION_TX_BUFFER) );
+
+  uint8_t response_size = set_meter_report_uint32(pTxBuf, RT_IMPORT, SCALE_A, 0, unhandledPacket);
 
   if (EQUEUENOTIFYING_STATUS_SUCCESS != Transport_SendRequestEP((uint8_t *)pTxBuf,
                                                                 response_size,

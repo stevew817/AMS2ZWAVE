@@ -61,7 +61,9 @@ typedef enum EVENT_APP_AMS2ZWAVE
   EVENT_APP_LEARN_IN_PROGRESS,
   EVENT_APP_POWER_UPDATE_FAST, // fires each 2.5s when a meter is connected
   EVENT_APP_POWER_UPDATE_SLOW, // fires each 10s when a meter is connected
-  EVENT_APP_ENERGY_UPDATE      // fires each 3600s when a meter is connected
+  EVENT_APP_ENERGY_UPDATE,     // fires each 3600s when a meter is connected
+  EVENT_APP_UNHANDLED_STATUS,  // fires when a command status is unhandled
+  EVENT_APP_UNHANDLED_PACKET   // fires when an incoming packet is unhandled
 }
 EVENT_APP;
 
