@@ -1598,17 +1598,22 @@ void HAN_setup(void)
   CMU_ClockEnable(cmuClock_GPCRC, true);
 
   // https://www.silabs.com/community/wireless/z-wave/knowledge-base.entry.html/2019/04/26/z-wave_700_how_toi-7ckT
+  // Additionally: set UART IRQ priority lower than the radio to avoid race conditions
   CMU_ClockEnable(cmuClock_USART0, true);
   USART_IntClear(USART0, _USART_IF_MASK);
   USART_IntEnable(USART0, USART_IF_RXDATAV);
   NVIC_ClearPendingIRQ(USART0_RX_IRQn);
+  NVIC_SetPriority(USART0_RX_IRQn, 4);
   NVIC_EnableIRQ(USART0_RX_IRQn);
 
   CMU_ClockEnable(cmuClock_USART1, true);
   USART_IntClear(USART1, _USART_IF_MASK);
   USART_IntEnable(USART1, USART_IF_RXDATAV);
   NVIC_ClearPendingIRQ(USART1_RX_IRQn);
+  NVIC_SetPriority(USART1_RX_IRQn, 4);
   NVIC_EnableIRQ(USART1_RX_IRQn);
+
+
 
   han_parser_set_callback(&HAN_callback);
 }
